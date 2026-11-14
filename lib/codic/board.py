@@ -5,6 +5,7 @@ ticket in an unknown directory; enforce budgets; write via tmp+rename.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -115,7 +116,28 @@ def build_census(f, tickets: list[dict], roster: dict, backend) -> str:
         lines.append("wake registrations (running detached jobs):")
         for job, name in wakes.items():
             lines.append(f"- {job} -> {name}")
+    wd = _armed_watchdogs(f)
+    if wd:
+        lines.append("")
+        lines.append("watchdogs armed (silent-agent insurance):")
+        for wid, (target, wake) in wd.items():
+            lines.append(f"- {wid}: {wake} watches {target}")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _armed_watchdogs(f) -> dict:
+    out = {}
+    if f.watches_dir.exists():
+        for w in sorted(f.watches_dir.glob("*.watch")):
+            if (f.watches_dir / (w.stem + ".result")).exists() or \
+               (f.watches_dir / (w.stem + ".cancelled")).exists():
+                continue
+            try:
+                reg = json.loads(w.read_text())
+                out[w.stem] = (reg["target"], reg["wake"])
+            except Exception:
+                out[w.stem] = ("?", "?")
+    return out
 
 
 def _declared_resources(f) -> set[str]:
@@ -141,7 +163,7 @@ def _wake_registrations(f) -> dict:
             if (f.runs_dir / (w.stem + ".result")).exists():
                 continue
             try:
-                out[w.stem] = __import__("json").loads(w.read_text())["wake"]
+                out[w.stem] = json.loads(w.read_text())["wake"]
             except Exception:
                 out[w.stem] = "?"
     return out

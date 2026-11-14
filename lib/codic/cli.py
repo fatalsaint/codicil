@@ -29,7 +29,8 @@ def cmd_init(f: Codic, a) -> int:
         sys.exit("codic init: already initialized (use --force to re-seed missing files only)")
     f.root.mkdir(parents=True, exist_ok=True)
     for d in ([f.queue / s for s in STATE_DIRS] + [f.gates_dir / "results", f.skills_dir,
-              f.evidence_dir, f.dispatch_dir, f.runs_dir, f.resources_dir, f.chain_dir, f.scenarios]):
+              f.evidence_dir, f.dispatch_dir, f.runs_dir, f.watches_dir, f.resources_dir,
+              f.chain_dir, f.scenarios]):
         d.mkdir(parents=True, exist_ok=True)
 
     # config
@@ -76,7 +77,7 @@ def cmd_init(f: Codic, a) -> int:
     # state gets its own git history; bulk stays out
     st_ign = f.state / ".gitignore"
     if not st_ign.exists():
-        st_ign.write_text("evidence/\nruns/\n*.tmp\nroster.json\n")
+        st_ign.write_text("evidence/\nruns/\nwatches/\n*.tmp\nroster.json\n")
     if not (f.state / ".git").exists():
         S.git(f.state, "init", "-q")
         S.git(f.state, "add", "-A")
@@ -428,10 +429,91 @@ def cmd_dispatch(f: Codic, a) -> int:
     if a.send:
         H.get(f).prompt(a.send, text, wait=False, timeout_ms=0)
         print(f"[dispatched to {a.send}]")
+        if not a.no_watch:
+            wid = _arm_watchdog(f, a.send, f"dispatch ticket {a.id}", 0, "")
+            print(f"[watchdog {wid} armed: silent worker wakes the orchestrator "
+                  f"in {int(f.cfg['watchdog']['after_secs'])}s; cancel when the report lands]")
     return 0
 
 
 # ----------------------------------------------------- detached runs ----
+def _arm_watchdog(f: Codic, target: str, why: str, after: int, wake: str) -> str:
+    """Register-then-sleep pattern (6.5): the wake registration exists before
+    the timer process does, and the wake target must resolve now."""
+    wd = f.watches_dir
+    wd.mkdir(parents=True, exist_ok=True)
+    backend = H.get(f)
+    if not backend.interactive:
+        sys.exit("a watchdog must be able to wake someone by name; "
+                 f"backend '{backend.name}' cannot")
+    H.validate_name(target)
+    wake = wake or str(f.cfg["watchdog"].get("wake") or "") or f.role_cfg("orchestrator")["prefix"]
+    H.validate_name(wake)
+    if not backend.resolve(wake):
+        sys.exit(f"watchdog wake target {wake!r} does not resolve in the harness; "
+                 "refusing to arm a watch nobody will hear from (I10)")
+    if not backend.resolve(target):
+        sys.exit(f"{target!r} does not resolve in the harness; nothing to watch")
+    after = after or int(f.cfg["watchdog"]["after_secs"])
+    wid = f"wd{int(time.time())}"
+    reg = {"target": target, "wake": wake, "why": why or "", "after": after, "set_at": S.now_utc()}
+    S.atomic_write(wd / f"{wid}.watch", json.dumps(reg) + "\n")
+    codic = f.root / "bin" / "codic"
+    wrapper = (f"sleep {after}; {H._shq(str(codic))} _watchfire {wid} "
+               f">>{H._shq(str(wd / (wid + '.log')))} 2>&1")
+    subprocess.Popen(["setsid", "sh", "-c", wrapper], start_new_session=True,
+                     cwd=str(f.repo), stdin=subprocess.DEVNULL)
+    return wid
+
+
+def cmd_watch(f: Codic, a) -> int:
+    wd = f.watches_dir
+    if a.action == "arm":
+        if not a.id_or_agent:
+            sys.exit("codic watch arm needs an agent name")
+        wid = _arm_watchdog(f, a.id_or_agent, a.why or "", a.after, a.wake or "")
+        print(f"watchdog {wid}: wakes the watcher in {a.after or int(f.cfg['watchdog']['after_secs'])}s "
+              f"if {a.id_or_agent} has not reported")
+        return 0
+    if a.action == "cancel":
+        if not (wd / f"{a.id_or_agent}.watch").exists():
+            sys.exit(f"no watchdog {a.id_or_agent}")
+        S.atomic_write(wd / f"{a.id_or_agent}.cancelled", S.now_utc() + "\n")
+        print(f"watchdog {a.id_or_agent} cancelled (the report landed)")
+        return 0
+    if a.action == "list":
+        for w in sorted(wd.glob("*.watch")) if wd.exists() else []:
+            reg = json.loads(w.read_text())
+            state = ("cancelled" if (wd / (w.stem + ".cancelled")).exists()
+                     else "fired" if (wd / (w.stem + ".result")).exists() else "armed")
+            print(f"{w.stem:<12} {state:<9} watch {reg['target']:<14} wake {reg['wake']:<14} "
+                  f"after {reg['after']}s ({reg['set_at']}) {reg['why']}")
+        return 0
+    sys.exit(f"unknown watch action {a.action}")
+
+
+def cmd_watchfire(f: Codic, a) -> int:
+    wf = f.watches_dir / f"{a.id}.watch"
+    if not wf.exists() or (f.watches_dir / (a.id + ".cancelled")).exists():
+        return 0
+    reg = json.loads(wf.read_text())
+    state = "unknown"
+    try:
+        state = H.get(f).list_agents().get(reg["target"], {}).get("state", "absent")
+    except SystemExit:
+        pass
+    S.atomic_write(f.watches_dir / f"{a.id}.result",
+                   json.dumps({"fired": S.now_utc(), "target_state": state}) + "\n")
+    line = (f"watchdog {a.id}: {reg['target']} state={state} {reg['after']}s after "
+            f"{reg['why'] or 'dispatch'} — no report landed; check it")
+    try:
+        H.get(f).prompt(reg["wake"], line, wait=False, timeout_ms=0)
+        print(f"woke {reg['wake']}: {line}")
+    except SystemExit as e:
+        print(f"wake failed ({e}); result file stands — the watcher reads it on boot (6.5)")
+    return 0
+
+
 def cmd_run(f: Codic, a) -> int:
     backend = H.get(f)
     if not backend.interactive:
@@ -570,11 +652,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--delta", default="first dispatch")
     s.add_argument("--budget", default="default model, no extra slots")
     s.add_argument("--send", help="also prompt this agent name")
+    s.add_argument("--no-watch", action="store_true", help="do not arm the silence watchdog")
 
     s = sub.add_parser("run", help="detached job with wake registration (6.5)")
     s.add_argument("--wake", required=True)
     s.add_argument("--label")
     s.add_argument("cmd_args", nargs=argparse.REMAINDER)
+
+    s = sub.add_parser("watch", help="watchdog: wake the watcher if an agent goes silent")
+    s.add_argument("action", choices=("arm", "cancel", "list"))
+    s.add_argument("id_or_agent", nargs="?", default="")
+    s.add_argument("--after", type=int, default=0, help="seconds (default: [watchdog] after_secs)")
+    s.add_argument("--why", help="what you are waiting on (ticket id, question)")
+    s.add_argument("--wake", help="who to wake (default: [watchdog] wake or the orchestrator)")
+
+    s = sub.add_parser("_watchfire", help=argparse.SUPPRESS)
+    s.add_argument("id")
 
     s = sub.add_parser("_wakeup", help=argparse.SUPPRESS)
     s.add_argument("job")
@@ -609,6 +702,7 @@ def main(argv: list[str]) -> int:
         "launch": cmd_launch, "stop": cmd_stop, "forget": cmd_forget,
         "prompt": cmd_prompt, "read": cmd_read, "ledger": cmd_ledger, "law": cmd_law,
         "ticket": cmd_ticket, "gate": cmd_gate_dispatch, "scenario": cmd_scenario,
-        "dispatch": cmd_dispatch, "run": cmd_run, "_wakeup": cmd_wakeup, "config": cmd_config,
+        "dispatch": cmd_dispatch, "run": cmd_run, "watch": cmd_watch,
+        "_watchfire": cmd_watchfire, "_wakeup": cmd_wakeup, "config": cmd_config,
     }
     return handlers[args.cmd](f, args)

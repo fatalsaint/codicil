@@ -154,6 +154,11 @@ def main() -> int:
         expect_contains(r.stderr + r.stdout, "not a valid agent name", "pane-id target rejected")
         r = codic(repo, "run", "--wake", "nobody-here", "--", "true", expect=1)
         expect_contains(r.stderr + r.stdout, "backend 'none' cannot wake", "detached job refused without harness")
+        r = codic(repo, "watch", "arm", "impl1", "--why", "ticket 7", expect=1)
+        expect_contains(r.stderr + r.stdout, "watchdog must be able to wake", "watchdog refused without harness")
+        r = codic(repo, "watch", "list")
+        if r.returncode == 0:
+            print("  ✓ watch list renders")
 
         print("[9] status + config")
         r = codic(repo, "status")

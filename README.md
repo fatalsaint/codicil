@@ -123,8 +123,10 @@ codic ticket new 7 --role implementer --title "add retry to client" \
   --question "Does the client retry 503s with backoff?" \
   --file src/client.py --accept "pytest tests/test_retry.py"
 codic ticket move 7 doing         # admit work
-codic dispatch 7 --delta "first dispatch" --send impl1
+codic dispatch 7 --delta "first dispatch" --send impl1   # arms a 30-min silence watchdog
 codic prompt orchestrator "why is ticket 7 still in doing?" --wait
+codic watch arm impl1 --why "ticket 7"   # arm manually for any other waiting turn
+codic watch cancel wd1763000000          # when the report lands
 codic gate pin scripts/e2e.sh     # freeze a gate you trust
 codic gate run e2e                # hash-verified before it may be quoted
 codic run --wake orchestrator -- make -j8 bench   # detached job, wakes by name
@@ -157,6 +159,7 @@ cannot pass its own checker is not running this pattern, it is running vibes.
 | `gate pin/check/run` | frozen gates with sha256 pins |
 | `scenario new/retire/list` | holdout scenarios |
 | `run --wake <name> -- <cmd>` | detached job with wake registration before launch |
+| `watch arm/cancel/list` | silence watchdog: if an agent has not reported in 30 min, wake the orchestrator with its live state |
 | `config` | print resolved config |
 
 ## Honest limits

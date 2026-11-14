@@ -24,6 +24,15 @@ default slot; if the default is your own class, you just burned your slot.
 `codic run --wake <name> -- <cmd>` registers the wake before launch and detaches.
 Never supervise a long job inside a session; end your turn instead of waiting.
 
+## Watchdogs: never end a waiting turn unarmed
+If you end your turn waiting on an agent, arm a watchdog before you end it:
+`codic watch arm <name> --why "ticket 7"`. `codic dispatch --send` arms one
+automatically (30 minutes, `[watchdog]` in codic.toml; `--no-watch` only when
+you armed one yourself). When the report lands, `codic watch cancel <id>`.
+A fired watch means the agent died or went silent: `codic read <name>` to see
+where it stopped, then relaunch it or re-dispatch the delta. The wake line is
+a nudge; `state/watches/<id>.result` is the record.
+
 ## Supersede (6.3)
 Ruling changes: append the ledger entry citing `Supersedes: [Lxxx]`, then edit
 the Law line in place citing the new entry. Never let a stale ruling survive in

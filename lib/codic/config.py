@@ -37,6 +37,10 @@ DEFAULTS: dict = {
     "coding_agent": {
         "default": "omp",
     },
+    "watchdog": {
+        "after_secs": 1800,              # 30 min: wake the watcher if no report landed
+        "wake": "",                      # who the watchdog wakes; empty -> orchestrator slot
+    },
     "llm": {
         "model": "",                   # global default model; per-role overrides win
         "env": {},                     # extra env vars for launched agent processes
@@ -108,6 +112,7 @@ class Codic:
         self.evidence_dir = self.state / "evidence"
         self.dispatch_dir = self.state / "dispatch"
         self.runs_dir = self.state / "runs"
+        self.watches_dir = self.state / "watches"
         self.resources_dir = self.state / "resources"
         self.chain_dir = self.state / ".chain"
         self.templates = self.root / "templates"

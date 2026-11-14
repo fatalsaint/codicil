@@ -180,6 +180,18 @@ def run_check(f, backend) -> int:
                     continue
                 if target not in live:
                     fail("I10", f"running job {w.stem} wakes {target!r} which does not resolve — nobody will hear from this job")
+        if f.watches_dir.exists():
+            for w in sorted(f.watches_dir.glob("*.watch")):
+                if (f.watches_dir / (w.stem + ".result")).exists() or \
+                   (f.watches_dir / (w.stem + ".cancelled")).exists():
+                    continue
+                try:
+                    wake = json.loads(w.read_text())["wake"]
+                except Exception:
+                    fail("I10", f"{w}: watchdog registration unreadable")
+                    continue
+                if wake not in live:
+                    fail("I10", f"armed watchdog {w.stem} wakes {wake!r} which does not resolve — it will fire into silence")
     else:
         warn("I10", f"backend '{f.backend_name()}' cannot resolve agent names; roster check skipped")
 
