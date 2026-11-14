@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import os
+import shlex
 import tomllib
 from pathlib import Path
 
@@ -113,6 +114,7 @@ class Codic:
         self.dispatch_dir = self.state / "dispatch"
         self.runs_dir = self.state / "runs"
         self.watches_dir = self.state / "watches"
+        self.reports_dir = self.state / "reports"
         self.resources_dir = self.state / "resources"
         self.chain_dir = self.state / ".chain"
         self.templates = self.root / "templates"
@@ -143,7 +145,7 @@ class Codic:
         """Compose the launch command for a role: launcher + model flag + args."""
         rc = self.role_cfg(role)
         ca = self.launcher(rc["agent"])
-        cmd = [ca["launch"]]
+        cmd = shlex.split(ca["launch"])
         if rc["model"] and ca["model_flag"]:
             cmd += [ca["model_flag"], rc["model"]]
         for a in rc["args"]:

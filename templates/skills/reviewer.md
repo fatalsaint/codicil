@@ -20,3 +20,9 @@ directory. You are read-only on everything except `state/evidence/<id>/`.
   check` green). An unpinned pass is a conformance failure, not a minor note.
 - Scenario hygiene: dispatches and evidence cite scenario ids, never predicate
   text (I8). Report leaks immediately; contamination is terminal for the scenario.
+
+## Reporting: verdict is not a report
+Writing the verdict file does not wake anyone. Before your final message:
+`codic report <ticket> done|blocked --as <your-slot> "<verdict one-liner, with verdict path>"`
+The report wakes the orchestrator and disarms your watchdog; a verdict nobody
+reads is a ticket stuck in review until the backstop fires.

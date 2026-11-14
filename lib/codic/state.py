@@ -241,8 +241,11 @@ def scenarios_load(f) -> list[dict]:
 
 
 # -- dispatch ---------------------------------------------------------------------------
-def dispatch_render(f, t: dict, delta: str, budget: str) -> str:
-    """SPEC 6.6: ticket id + delta + budget declaration. Never the ticket body."""
+def dispatch_render(f, t: dict, delta: str, budget: str, agent: str = "") -> str:
+    """SPEC 6.6: ticket id + delta + budget declaration. Never the ticket body.
+    The Report footer is part of the handoff: a worker that finishes silently
+    is indistinguishable from a dead one, and the watchdog backstop burns the
+    full interval on every early finish."""
     read = [".codic/state/STATE.md", f".codic/state/skills/{t['role']}.md",
             f".codic/state/queue/{t['_state']}/{Path(t['_path']).name}"]
     lines = [DISPATCH_MARK.format(tid=t["id"]),
@@ -250,7 +253,10 @@ def dispatch_render(f, t: dict, delta: str, budget: str) -> str:
              f"Role: {t['role']}  Worktree: {t.get('worktree', '(none)')}  Engine: {t.get('engine', '(n/a)')}",
              f"Delta: {delta}",
              f"Budget: {budget}",
-             "Read (nothing else): " + ", ".join(read)]
+             "Read (nothing else): " + ", ".join(read),
+             f"Report before your final turn: codic report {t['id']} done|blocked "
+             f"--as {agent or '<your-slot>'} \"<one line, with evidence path>\" "
+             "(wakes the orchestrator and disarms the watchdog)"]
     return "\n".join(lines) + "\n"
 
 

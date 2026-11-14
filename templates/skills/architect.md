@@ -21,3 +21,9 @@ asked to shape. You write contracts, not code.
 - Does every acceptance line name a command and an expected observable?
 - Are hash-pinned gates referenced by script path, never paraphrased?
 - Is the rollback story stated for anything that can break the build?
+
+## Reporting: contract delivered is contract reported
+Before your final message:
+`codic report <ticket> done|blocked --as <your-slot> "<one line, with contract path>"`
+The report wakes the orchestrator and disarms your watchdog; a contract left
+on disk unreported holds the ticket out of dispatch until the backstop fires.

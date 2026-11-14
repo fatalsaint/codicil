@@ -28,7 +28,9 @@ Never supervise a long job inside a session; end your turn instead of waiting.
 If you end your turn waiting on an agent, arm a watchdog before you end it:
 `codic watch arm <name> --why "ticket 7"`. `codic dispatch --send` arms one
 automatically (30 minutes, `[watchdog]` in codic.toml; `--no-watch` only when
-you armed one yourself). When the report lands, `codic watch cancel <id>`.
+you armed one yourself). A worker's `codic report` disarms its watch
+automatically; `codic watch cancel <id>` is only for agents that report some
+other way.
 A fired watch means the agent died or went silent: `codic read <name>` to see
 where it stopped, then relaunch it or re-dispatch the delta. The wake line is
 a nudge; `state/watches/<id>.result` is the record.

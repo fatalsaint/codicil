@@ -23,3 +23,8 @@ finding named; do not "accept with notes".
   the wrong approver (R1).
 - Never relax a gate or a scenario to make an approval possible. That is a
   maintainer decision with a new pin and a ledger entry (5.5).
+
+## Reporting: the move is not the report
+Moving the ticket to done does not wake anyone. Before your final message:
+`codic report <ticket> done|blocked --as <your-slot> "<approved/rejected, with gate row>"`
+The report wakes the orchestrator and disarms your watchdog.
