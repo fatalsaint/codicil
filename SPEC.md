@@ -1,12 +1,14 @@
 # Fleet Spec: a state architecture for agent-built software
 
-Status: draft 2, 2026-11-12. Draft 1 was reviewed by the Ninox orchestrator;
+Status: draft 3, 2026-11-14. Draft 1 was reviewed by a live fleet's orchestrator;
 six findings, five accepted as filed, one accepted with a partial disagreement
 (exclusive per-line Law ownership instead of blanket maintainer ownership, 5.1).
-Author: reviewed against the Ninox fleet (Qwen3.8-Flash-Next inference engine, AMD gfx1151)
+Draft 3 generalized the spec for open-source release: the reference deployment,
+a local-inference fleet on consumer AMD silicon, is cited throughout as "the
+reference fleet", and its instantiation annex was removed.
 Sources: StrongDM Software Factory (factory.strongdm.ai, Principles and Techniques pages),
 Simon Willison's writeup of 2026-02-07, strongdm/attractor specs, and two years of
-postmortems from the Ninox harness.
+postmortems from a production agent harness.
 
 ---
 
@@ -28,8 +30,7 @@ and the whole of its orientation: L0 plus its role's skill set; everything else
 is expanded on demand by id.**
 
 This spec is repo-agnostic. Section 9 says what transfers unchanged, what each repo
-must supply, and how to check conformance. Annex A maps every clause onto the Ninox
-instantiation, which is the reference deployment.
+must supply, and how to check conformance.
 
 ## 2. Non-goals
 
@@ -185,7 +186,7 @@ The line between law and skill:
 A law line that reads like procedure is misplaced: move it to the role's skill
 set. Skills are a per-repo binding (9.2), not a fourth zoom level. The pyramid
 zooms on state; skills attach to roles. Each role's skill set is one declared
-file with a budget that fleet-check enforces (I12). A skill that no boot loads
+file with a budget that `codic check` enforces (I12). A skill that no boot loads
 is dead prose; a lesson that every session re-derives is a missing skill, and
 writing it down is itself a ticket.
 
@@ -199,7 +200,7 @@ Generated census at <UTC stamp>. Law section is curated; edit in place,
 cite the ledger entry, append the superseded text to NOTES.md.
 
 ## Law
-- [L187] Gates are law. perf-baseline.sh is hash-pinned; never relax it, and
+- [L187] Gates are law. bench-gate.sh is hash-pinned; never relax it, and
   never quote a pass that did not come from it, including any rate from a
   profiled run, which is the misreading that flatters. (maintainer, 2026-11-08)
 - [L203] Admission to the device is engine presence and window state, never a
@@ -249,7 +250,7 @@ files:                       # write scope; exceeding it is a review rejection
 question: >                  # one line, appears verbatim on the board
   Does the per-token parity path match FP32 reference logits after the FP16 arena change?
 acceptance:                  # machine-checkable checks, see 5.6 for what must NOT go here
-  - scripts/nx-gate 61 exits 0
+  - scripts/gate 61 exits 0
   - examples/block-parity prints PARITY_OK
 blocked-by: ["52"]
 ```
@@ -320,9 +321,9 @@ than pretending to an isolation you do not have.
 
 ### 5.7 The board tool
 
-One script, `fleet-board`, in the repo. It regenerates L1 and the Census section
-of L0 from: the state directories, the ticket frontmatter, the gate results
-directory, and the resource marker. It:
+One command, `codic board`. It regenerates L1 and the Census section of L0 from:
+the state directories, the ticket frontmatter, the gate results directory, and
+the resource marker. It:
 
 - parses every ticket or fails naming the file;
 - enforces the token budgets of 4.2;
@@ -364,7 +365,7 @@ Rejection keeps a ticket out of any exclusive-resource window. A reviewer
 rejection is terminal for that attempt: back to `doing` with the findings, not to
 a window.
 
-`blocked-by` entries are ticket ids or `resource:<name>`, so "the APU is held by
+`blocked-by` entries are ticket ids or `resource:<name>`, so "the GPU is held by
 a maintainer experiment" is representable state rather than an informal pause;
 the Census names the current holder of each declared resource (4.2).
 
@@ -380,8 +381,8 @@ Nothing is deleted from the ledger. Nothing stale survives in Law.
 
 ### 6.4 Exclusive-resource windows
 
-Generalized from the Ninox GPU window. Wherever the repo declares a scarce
-exclusive resource (GPU, staging environment, paid API quota, license seat):
+Generalized from the reference fleet's GPU window. Wherever the repo declares a
+scarce exclusive resource (GPU, staging environment, paid API quota, license seat):
 
 - One marker directory means the window is open. Admission is marker presence and
   the live state of the resource. Never a heuristic like free memory.
@@ -402,7 +403,7 @@ exclusive resource (GPU, staging environment, paid API quota, license seat):
   No agent session is a job supervisor.
 - Wake registration happens before launch. The launcher records the wake target
   by name and refuses to start the job if the name does not resolve through the
-  harness. fleet-check verifies every roster name resolves and every running
+  harness. `codic check` verifies every roster name resolves and every running
   detached job has a registration (I10). A job whose wake target cannot be
   named is a job nobody will hear from, which is the lost-wakeup incident in
   advance.
@@ -432,7 +433,7 @@ the dispatches feeding it were re-pasted briefs.
 
 ## 7. Invariants
 
-Machine-checkable. `fleet-check` (8) enforces all of them.
+Machine-checkable. `codic check` (8) enforces all of them.
 
 - I1  Law ≤ 2,048 tokens; Census ≤ 1,024; L1 ≤ 8,192.
 - I2  Every Law line cites a ledger id that exists.
@@ -456,15 +457,15 @@ Machine-checkable. `fleet-check` (8) enforces all of them.
 - I12 Every role has a declared skill set within budget, and every law line
       carries a citation, an owner tag, and a counterexample clause.
 
-## 8. `fleet-check`
+## 8. `codic check`
 
-One script, `fleet-check`, run by CI and by the board tool before publishing L0.
+One command, run by CI and by `codic board` before publishing L0.
 It enforces I1 through I12 and exits nonzero on any violation. This is the
 Atelier lesson generalized: the seam between "what the generator assumes" and
 "what the files actually look like" is where fleets die, so make the seam a
 command. A schema mismatch that surfaces after a 25-minute exclusive-resource
 blackout costs the scarcest thing the fleet has; the same mismatch caught by
-`fleet-check` costs nothing.
+`codic check` costs nothing.
 
 ## 9. Portability
 
@@ -477,26 +478,26 @@ The pyramid and its budgets (4.2), law/ledger separation and supersede protocol
 separation and the no-self-acceptance rule (4.1), frozen gates with a pinfile
 (5.5), holdout scenarios and satisfaction acceptance (5.6), boot-from-disk
 recovery (6.1), named agents and detached jobs (6.5), and the conformance checker
-(8). None of this mentions GPUs, Rust, or Ninox.
+(8). None of this mentions GPUs, Rust, or any particular project.
 
 ### 9.2 Per-repo bindings (each repo supplies these)
 
-| binding | Ninox value | a webapp's plausible value |
+| binding | reference fleet | a webapp's plausible value |
 | --- | --- | --- |
-| exclusive resource + window tool | the APU, `nx-window` | staging env, or none |
-| frozen gates + pins | `perf-baseline.sh` | e2e suite, load test |
-| role-to-model mapping | `~/.omp/agent/config.yml` | provider config |
+| exclusive resource + window tool | the GPU, a window tool | staging env, or none |
+| frozen gates + pins | `bench-gate.sh` | e2e suite, load test |
+| role-to-model mapping | the agent CLI's own config | provider config in codic.toml |
 | harness addressing | Herdr pane names | tmux, k8s jobs |
-| scenario store | `~/ninox-ops/scenarios/` | any non-repo path |
-| ledger/board location | `~/ninox-ops/queue/` | `.fleet/` in repo |
-| role skill sets | `memory://root` plus per-role skills, to be declared and budgeted | `skills/<role>.md` |
-| external strategy approver | `overseer` (cloud, survives blackouts, binds window order; observation is never a grant) | optional; only where a scarce resource makes ordering decisions worth a second opinion |
+| scenario store | a path outside the repo | any non-repo path |
+| ledger/board location | a queue dir outside the repo | `.codic/state/` in repo |
+| role skill sets | per-role skill files, declared and budgeted | `state/skills/<role>.md` |
+| external strategy approver | an out-of-band second opinion that survives blackouts (observation is never a grant) | optional; only where a scarce resource makes ordering decisions worth a second opinion |
 
 ### 9.3 Porting checklist
 
 1. Create the state directories and move state out of the tracked tree if the repo
-   treats run records as noise (Ninox did this in one purge commit).
-2. Write `fleet-board` and `fleet-check` for the repo's ticket schema. Budgets and
+   treats run records as noise.
+2. Install codic (`git clone … .codic && .codic/bin/codic init`). Budgets and
    invariants are not configurable per repo; that is the point.
 3. Pin the gates you already trust. Everything unpinned is provisional until pinned.
 4. Write the first Law file by hand, once, from the current rulings only. Cite
@@ -507,7 +508,7 @@ recovery (6.1), named agents and detached jobs (6.5), and the conformance checke
 6. Name every agent pane/session. Fix every script that addresses by id.
 7. Move acceptance predicates the implementer must not see into `scenarios/`.
    Start with the two or three that actually gate releases.
-8. Run `fleet-check` in CI. A fleet that cannot pass its own checker is not
+8. Run `codic check` in CI. A fleet that cannot pass its own checker is not
    running this pattern, it is running vibes.
 
 ### 9.4 Known limits of the pattern
@@ -525,44 +526,20 @@ recovery (6.1), named agents and detached jobs (6.5), and the conformance checke
   budget that forces law to be complete-or-promoted is the point; a budget
   that only forces it to be short is a shorter way to fail.
 
-## Annex A. Ninox instantiation
-
-| spec clause | Ninox artifact |
-| --- | --- |
-| L0 law file | `~/ninox-ops/STATE.md` (to create) |
-| L1 board | `~/ninox-ops/queue/BOARD.md` via `scripts/nx-board` (needs both-format parsing + budgets) |
-| ledger | `~/ninox-ops/queue/NOTES.md` (needs entry ids) |
-| tickets | `~/ninox-ops/queue/<state>/NN-slug.md` |
-| frozen gate + pin | `scripts/gates/perf-baseline.sh`, sha256 `61e4a04...c507e` |
-| exclusive resource | the gfx1151 APU; `nx-window`, `nx-run`, `gpu-serve.sh` |
-| roles/panes | orchestrator, impl1-3, arch1, rev1, overseer (all named 2026-11-13) |
-| supervisor | detached window driver + herdr wake (`6.5` matches current practice) |
-| scenarios | none yet; the frozen gate is the only holdout-shaped artifact |
-| skill layer | `memory://root` and per-role skills exist; not yet declared, budgeted, or in the boot sequence |
-| fleet-check | none yet |
-
-Gaps remaining after the 2026-11-13 migration (steps 0-6 done: state tree
-versioned, ledger ids, L0 drafted, fleet-board/fleet-check installed, panes
-named, skills declared): Law awaits maintainer approval; 115/158 legacy tickets
-lack frontmatter (state/i4-debt.txt, migrate as touched); no holdout scenarios
-yet (fleet-check I8/I11 deferred until they exist); the live runbook still
-carries stale `nx`-era text pending step 8; dispatch discipline is Law but not
-yet checker-enforced.
-
 ## Annex B. Lineage of each mechanism
 
 | mechanism | origin |
 | --- | --- |
 | Pyramid Summaries, zoom levels | StrongDM Techniques page, adapted from pyramid TIFF / map tiles |
 | scenarios as holdout, satisfaction | StrongDM, citing Cem Kaner's scenario testing (2003) |
-| filesystem as memory, directories as state | StrongDM "The Filesystem" technique; already Ninox practice |
+| filesystem as memory, directories as state | StrongDM "The Filesystem" technique; already the reference fleet's practice |
 | machine-checkable seam as a command | Atelier's `check:contract`, generalized |
-| detached job + named wake | Ninox window postmortems, 2026-11-11/12 |
-| admission by marker presence, never memory floor | Ninox hard-kill incident (350 MiB margin against an 89 GB pinned engine) |
-| result vs lost-device separation | Ninox windows that retried correct negative results |
-| boot-from-disk recovery | Ninox runbook's "recovery is never memory", restored from a retired harness's docs |
-| skill layer bound to roles, not sessions | Ninox orchestrator's review of draft 1; existing `memory://root` and skills practice |
-| counterexample clause in law | Ninox delegation rule: the named trap is what makes the rule load-bearing |
-| wake registration before launch | Ninox lost-wakeup incident, 2026-11-12 |
-| dispatch = ticket id + delta | Ninox 207K-token compaction, orchestrator report 2026-11-12 |
-| contamination retires the scenario | standard holdout hygiene, applied after the orchestrator's case-26 dispatch leak |
+| detached job + named wake | the reference fleet's window postmortems, 2026-11-11/12 |
+| admission by marker presence, never memory floor | the reference fleet's hard-kill incident (350 MiB margin against an 89 GB pinned engine) |
+| result vs lost-device separation | windows that retried correct negative results |
+| boot-from-disk recovery | a retired harness's runbook: "recovery is never memory" |
+| skill layer bound to roles, not sessions | the reference fleet's orchestrator review of draft 1; existing per-role skills practice |
+| counterexample clause in law | the delegation rule that needed it: the named trap is what makes the rule load-bearing |
+| wake registration before launch | the reference fleet's lost-wakeup incident, 2026-11-12 |
+| dispatch = ticket id + delta | the reference fleet's 207K-token compaction, orchestrator report 2026-11-12 |
+| contamination retires the scenario | standard holdout hygiene, applied after a dispatch leaked a predicate |
