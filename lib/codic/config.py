@@ -13,6 +13,11 @@ import tomllib
 from pathlib import Path
 
 ROLES = ("orchestrator", "architect", "implementer", "reviewer", "approver", "supervisor")
+
+# Every [agents.<role>] table, built-in or custom, is merged over this template
+# at load: declaring a new role is one table, not a restatement of every key
+# (issue #4). prefix defaults to the role name.
+ROLE_DEFAULTS = {"count": 1, "agent": "", "model": "", "args": [], "skill_budget": 1500}
 STATE_DIRS = ("ready", "doing", "review", "reviewed", "gpu", "blocked", "done")
 
 # Budgets are law (SPEC 4.2): not configurable per repo. Only the token
@@ -95,6 +100,13 @@ class Codic:
             with open(self.config_path, "rb") as f:
                 data = tomllib.load(f)
         self.cfg = _merge(DEFAULTS, data)
+        for role, rc in list(self.cfg["agents"].items()):
+            unknown = set(rc) - set(ROLE_DEFAULTS) - {"prefix"}
+            if unknown:
+                raise SystemExit(f"codic.toml [agents.{role}]: unknown key(s) "
+                                 f"{', '.join(sorted(unknown))} "
+                                 f"(known: prefix, {', '.join(ROLE_DEFAULTS)})")
+            self.cfg["agents"][role] = {**copy.deepcopy(ROLE_DEFAULTS), "prefix": role, **rc}
         st = self.cfg["codic"]["state_dir"]
         self.state = (self.root / st) if not Path(st).is_absolute() else Path(st)
         sp = self.cfg["codic"]["scenarios_path"]

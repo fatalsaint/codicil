@@ -216,6 +216,27 @@ def main() -> int:
         expect_contains(r.stdout, "0 fail", "I4 accepts migrated empty-list tickets")
         mig.unlink()
         codic(repo, "board")
+
+        print("[11] custom roles inherit defaults (issue #4)")
+        cfg = repo / ".codic" / "codic.toml"
+        cfg.write_text(cfg.read_text() + '\n[agents.scout]\ncount = 1\nprefix = "scout"\n')
+        (st / "skills" / "scout.md").write_text("# scout skill\n\nRecon only; report in one line.\n")
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "minimal custom role passes check with inherited defaults")
+        codic(repo, "ticket", "new", "13", "--role", "scout", "--title", "recon deps",
+              "--question", "Which deps are unmaintained?", "--accept", "true")
+        r = codic(repo, "launch", "scout", expect=1)
+        expect_contains(r.stdout + r.stderr, "cannot launch agents",
+                        "custom role resolves through role_cfg")
+        r = codic(repo, "launch", "nosuch", expect=1)
+        expect_contains(r.stdout + r.stderr, "unknown agent role",
+                        "unconfigured role gets a named diagnostic")
+        (st / "queue" / "ready" / "13-recon-deps.md").unlink()
+        codic(repo, "board")
+        cfg.write_text(cfg.read_text() + "\n[agents.gossip]\nskill_budgt = 999\n")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "unknown key(s) skill_budgt",
+                        "typo'd role key is named, not silently defaulted")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
