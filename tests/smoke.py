@@ -5,6 +5,7 @@ Creates a throwaway repo, clones the harness into .codic, inits with
 backend=none, exercises the ticket/board/check/ledger/gate/scenario/dispatch
 loop, then breaks invariants one by one and proves `codic check` goes red.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -122,11 +123,28 @@ def main() -> int:
         r = codic(repo, "dispatch", "7", "--delta", "first dispatch", "--budget", "default model")
         expect_contains(r.stdout, "codic:dispatch v1 ticket=7", "dispatch marker")
         expect_contains(r.stdout, "Ticket: 7", "dispatch cites ticket")
+        expect_contains(r.stdout, "codic report 7 done|blocked", "handoff names the report command")
         dsp = sorted((st / "dispatch").glob("*.md"))[-1]
         dsp.write_text(dsp.read_text() + "\nw1:p1 do the work\n")
         r = codic(repo, "check", expect=1)
         expect_contains(r.stdout, "pane/tab id", "I6 catches pane-id addressing")
         dsp.unlink()
+        codic(repo, "check")
+
+        print("[6b] report: durable file, watchdog disarm, wake gap stated")
+        (st / "watches" / "wdtest.watch").write_text(
+            json.dumps({"target": "impl1", "wake": "orchestrator", "why": "dispatch ticket 7",
+                        "after": 1800, "set_at": "2026-11-14T00:00:00Z"}) + "\n")
+        r = codic(repo, "report", "7", "done", "all acceptance green; evidence state/evidence/7/run.md",
+                  "--as", "impl1")
+        expect_contains(r.stdout, "disarmed wdtest", "report disarms the armed watchdog")
+        assert (st / "watches" / "wdtest.cancelled").exists(), "watch registration cancelled"
+        reps = sorted((st / "reports").glob("*-7-done.md"))
+        assert reps, "durable report file written"
+        expect_contains(reps[-1].read_text(), "impl1  ticket 7  done", "report cites agent, ticket, status")
+        expect_contains(r.stdout, "cannot wake orchestrator", "none backend states the wake gap")
+        r = codic(repo, "report", "7", "done", "x", "--as", "not a name!", expect=1)
+        assert r.returncode == 1, "report rejects an unnameable agent"
         codic(repo, "check")
 
         print("[7] invariant breakage: schema, chain, census drift")

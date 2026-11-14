@@ -32,7 +32,7 @@ git clone https://gitea.linuxniche.com/FatalSaint/codicil.git .codic
 2. Scaffolds the state tree under `.codic/state/`: `STATE.md` (L0 law +
    generated census), `NOTES.md` (append-only ledger, seeded with `[L1]`),
    `queue/{ready,doing,review,reviewed,gpu,blocked,done}/`, `skills/`,
-   `gates/`, `scenarios/`, `evidence/`, `dispatch/`, `runs/`.
+   `gates/`, `scenarios/`, `evidence/`, `dispatch/`, `runs/`, `reports/`.
 3. Gives `state/` its own git history. The ledger is only as trustworthy as
    its history, and the outer repo never sees any of it: init adds `.codic/`
    to the repo's `.gitignore`, so active worker and agent state stays out of
@@ -64,7 +64,7 @@ repo/
       skills/<role>.md        # the skill layer: operational knowledge per role
       gates/pins.toml         # frozen gates: sha256 per gate script
       scenarios/              # holdout predicates, invisible to implementers
-      evidence/ dispatch/ runs/ resources/
+      evidence/ dispatch/ runs/ reports/ resources/
 ```
 
 Three zoom levels. An agent boots at L0 plus its role skill and expands
@@ -124,9 +124,10 @@ codic ticket new 7 --role implementer --title "add retry to client" \
   --file src/client.py --accept "pytest tests/test_retry.py"
 codic ticket move 7 doing         # admit work
 codic dispatch 7 --delta "first dispatch" --send impl1   # arms a 30-min silence watchdog
+codic report 7 done --as impl1 "all green; evidence state/evidence/7/run.md"   # the worker runs this: wakes you, disarms the watch
 codic prompt orchestrator "why is ticket 7 still in doing?" --wait
 codic watch arm impl1 --why "ticket 7"   # arm manually for any other waiting turn
-codic watch cancel wd1763000000          # when the report lands
+codic watch cancel wd1763000000          # only for agents that report some other way
 codic gate pin scripts/e2e.sh     # freeze a gate you trust
 codic gate run e2e                # hash-verified before it may be quoted
 codic run --wake orchestrator -- make -j8 bench   # detached job, wakes by name
@@ -155,6 +156,7 @@ cannot pass its own checker is not running this pattern, it is running vibes.
 | `stop <name>` / `forget <name>` | close a launched agent / drop a stale roster entry |
 | `ticket new/move/show` | ticket lifecycle; directory move is the transition |
 | `dispatch <id>` | generate the dispatch (ticket id + delta + budget, capped) and optionally send |
+| `report <id> done\|blocked --as <slot> "<line>"` | the worker's completion signal: wakes the orchestrator, disarms its watchdog, files to `state/reports/` |
 | `ledger` / `law add` | append ledger entries; append shape-checked law lines |
 | `gate pin/check/run` | frozen gates with sha256 pins |
 | `scenario new/retire/list` | holdout scenarios |

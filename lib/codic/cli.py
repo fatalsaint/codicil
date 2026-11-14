@@ -29,8 +29,8 @@ def cmd_init(f: Codic, a) -> int:
         sys.exit("codic init: already initialized (use --force to re-seed missing files only)")
     f.root.mkdir(parents=True, exist_ok=True)
     for d in ([f.queue / s for s in STATE_DIRS] + [f.gates_dir / "results", f.skills_dir,
-              f.evidence_dir, f.dispatch_dir, f.runs_dir, f.watches_dir, f.resources_dir,
-              f.chain_dir, f.scenarios]):
+              f.evidence_dir, f.dispatch_dir, f.runs_dir, f.watches_dir, f.reports_dir,
+              f.resources_dir, f.chain_dir, f.scenarios]):
         d.mkdir(parents=True, exist_ok=True)
 
     # config
@@ -419,7 +419,7 @@ def cmd_dispatch(f: Codic, a) -> int:
     p = _find_ticket(f, a.id)
     t = T.load(p)
     t["_state"] = p.parent.name
-    text = S.dispatch_render(f, t, a.delta, a.budget)
+    text = S.dispatch_render(f, t, a.delta, a.budget, a.send or "")
     for msg in S.dispatch_check_size(f, text, "dispatch"):
         sys.exit(msg)
     out = f.dispatch_dir / f"{a.id}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.md"
@@ -433,6 +433,54 @@ def cmd_dispatch(f: Codic, a) -> int:
             wid = _arm_watchdog(f, a.send, f"dispatch ticket {a.id}", 0, "")
             print(f"[watchdog {wid} armed: silent worker wakes the orchestrator "
                   f"in {int(f.cfg['watchdog']['after_secs'])}s; cancel when the report lands]")
+    return 0
+
+
+# ---------------------------------------------------------------- report ----
+def cmd_report(f: Codic, a) -> int:
+    """The worker's completion signal: durable report file, watchdog disarm,
+    orchestrator wake. A finish without a report is indistinguishable from a
+    dead agent, so this is the step the dispatch footer and role skills name."""
+    p = _find_ticket(f, a.id)
+    t = T.load(p)
+    H.validate_name(a.as_agent)
+    line = a.line.strip()
+    if not line:
+        sys.exit("codic report needs a one-line summary")
+    wake = (a.wake or str(f.cfg["watchdog"].get("wake") or "")
+            or f.role_cfg("orchestrator")["prefix"])
+    H.validate_name(wake)
+    stamp = S.now_utc()
+    f.reports_dir.mkdir(parents=True, exist_ok=True)
+    out = f.reports_dir / (f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+                           f"-{t['id']}-{a.status}.md")
+    S.atomic_write(out, f"{stamp}  {a.as_agent}  ticket {t['id']}  {a.status}\n{line}\n")
+    disarmed = []
+    wd = f.watches_dir
+    for w in sorted(wd.glob("*.watch")) if wd.exists() else []:
+        if (wd / (w.stem + ".cancelled")).exists() or (wd / (w.stem + ".result")).exists():
+            continue
+        try:
+            reg = json.loads(w.read_text())
+        except Exception:
+            continue
+        if reg.get("target") == a.as_agent:
+            S.atomic_write(wd / (w.stem + ".cancelled"), stamp + "\n")
+            disarmed.append(w.stem)
+    backend = H.get(f)
+    msg = f"report {out.name}"
+    if backend.interactive:
+        try:
+            backend.prompt(wake, f"{a.as_agent}: ticket {t['id']} {a.status} — {line}",
+                           wait=False, timeout_ms=0)
+            msg += f", woke {wake}"
+        except SystemExit as e:
+            msg += f"; wake FAILED ({e}) — report file stands, read it on boot (6.5)"
+    else:
+        msg += f"; backend '{backend.name}' cannot wake {wake} — report file stands"
+    if disarmed:
+        msg += ", disarmed " + " ".join(disarmed)
+    print(msg)
     return 0
 
 
@@ -462,7 +510,8 @@ def _arm_watchdog(f: Codic, target: str, why: str, after: int, wake: str) -> str
     wrapper = (f"sleep {after}; {H._shq(str(codic))} _watchfire {wid} "
                f">>{H._shq(str(wd / (wid + '.log')))} 2>&1")
     subprocess.Popen(["setsid", "sh", "-c", wrapper], start_new_session=True,
-                     cwd=str(f.repo), stdin=subprocess.DEVNULL)
+                     cwd=str(f.repo), stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return wid
 
 
@@ -533,7 +582,8 @@ def cmd_run(f: Codic, a) -> int:
                f"echo $? >{H._shq(str(exitf))}; {H._shq(str(codic))} _wakeup {job} "
                f">>{H._shq(str(f.runs_dir / (job + '.wake.log')))} 2>&1")
     subprocess.Popen(["setsid", "sh", "-c", wrapper], start_new_session=True,
-                     cwd=str(f.repo), stdin=subprocess.DEVNULL)
+                     cwd=str(f.repo), stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"job {job} launched detached; wakes {a.wake}; log {log.relative_to(f.root)}")
     return 0
 
@@ -654,6 +704,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--send", help="also prompt this agent name")
     s.add_argument("--no-watch", action="store_true", help="do not arm the silence watchdog")
 
+    s = sub.add_parser("report", help="worker completion report: wakes the orchestrator, disarms the watchdog")
+    s.add_argument("id", help="ticket id")
+    s.add_argument("status", choices=("done", "blocked"))
+    s.add_argument("line", help="one-line summary, with the evidence path")
+    s.add_argument("--as", dest="as_agent", required=True, metavar="AGENT", help="your slot name")
+    s.add_argument("--wake", default="", help="who to wake (default: [watchdog] wake or the orchestrator)")
+
     s = sub.add_parser("run", help="detached job with wake registration (6.5)")
     s.add_argument("--wake", required=True)
     s.add_argument("--label")
@@ -702,7 +759,7 @@ def main(argv: list[str]) -> int:
         "launch": cmd_launch, "stop": cmd_stop, "forget": cmd_forget,
         "prompt": cmd_prompt, "read": cmd_read, "ledger": cmd_ledger, "law": cmd_law,
         "ticket": cmd_ticket, "gate": cmd_gate_dispatch, "scenario": cmd_scenario,
-        "dispatch": cmd_dispatch, "run": cmd_run, "watch": cmd_watch,
+        "dispatch": cmd_dispatch, "run": cmd_run, "watch": cmd_watch, "report": cmd_report,
         "_watchfire": cmd_watchfire, "_wakeup": cmd_wakeup, "config": cmd_config,
     }
     return handlers[args.cmd](f, args)
