@@ -72,6 +72,37 @@ downward by id, never sideways. Law is edited in place and cites the ledger;
 the ledger is append-only and never edited. A ruling that changes gets a new
 ledger entry with `Supersedes: [Lxxx]` and an in-place Law edit (SPEC 6.3).
 
+## Where contracts come from
+
+Codicil checks contracts; it does not write them. A ticket with a vague
+question is visibly broken at admission and still broken. The recommended
+setup splits design-time from run-time:
+
+1. **Write the spec with a design-time tool.** EGM
+   ([google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)),
+   [Spec Kit](https://github.com/github/spec-kit),
+   [OpenSpec](https://github.com/Fission-AI/OpenSpec), or
+   [Superpowers](https://github.com/obra/superpowers) — or the lightweight
+   `grill-me` → `to-spec` pair from
+   [mattpocock/skills](https://github.com/mattpocock/skills), where one skill
+   interrogates you until the intent stops being vague and the other turns
+   the answers into a spec. Anything that produces a written, reviewed
+   `SPEC.md` works; the tool is a per-repo binding, not a dependency.
+2. **Point the orchestrator at it.**
+   `codic prompt orchestrator "decompose SPEC.md into tickets: contracts cite
+   the spec section, acceptance lines name commands"`. The architect role
+   hardens each contract; the board shows the whole decomposition before any
+   dispatch happens.
+3. **Deploy and run.** `codic launch <role>` per `codic.toml`, then dispatch,
+   report, gate. From here the fleet's state is the record; the spec is just
+   another artifact tickets cite.
+
+Those frameworks govern design-time: what to build, how to specify it. Codicil
+governs run-time: who is doing what, what was proven, who must be woken. They
+compose; they are not alternatives. The spec's acceptance criteria become
+ticket `acceptance:` lines, its risky invariants become pinned gates, and the
+predicates you do not want implementers to see become scenarios.
+
 ## Config
 
 `codic.toml` binds the pattern to your repo:
@@ -173,7 +204,8 @@ cannot pass its own checker is not running this pattern, it is running vibes.
   model-specific tokenizer.
 - Sub-second feedback loops need no resource windows; skip that ceremony.
 - The pattern does not make a bad ticket contract executable. It makes an
-  incomplete contract visible at admission instead of at hour nine.
+  incomplete contract visible at admission instead of at hour nine. For the
+  contract itself, bring a design-time tool: see "Where contracts come from".
 
 ## License
 

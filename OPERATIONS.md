@@ -46,6 +46,31 @@ rule into `AGENTS.md`/`CLAUDE.md`. Then, by hand:
    releases, in `state/scenarios/` or a path outside the repo.
 6. **CI.** `codic check` runs on every push. Red check, no merges.
 
+### Where contracts come from (recommended pattern)
+
+Codicil checks contracts and never writes them (SPEC 9.4), so start the
+project itself with a design-time tool, then hand off:
+
+1. **Generate a real spec.** EGM, Spec Kit, OpenSpec, or Superpowers for the
+   full pipeline; `grill-me` → `to-spec` from mattpocock/skills for the
+   lightweight version. The output is one artifact: a written, reviewed
+   `SPEC.md` committed to the repo like any source file.
+2. **Hand it to the orchestrator.**
+   `codic prompt orchestrator "decompose SPEC.md into tickets: contracts cite
+   the spec section, acceptance lines name commands"`. Tickets cite the spec's
+   path and section; they never paste it (6.6 applies to specs too). The
+   architect hardens contracts, `codic check` proves they parse, and the board
+   shows the decomposition before the first dispatch.
+3. **Map the spec's criteria onto the state tree.** Acceptance criteria become
+   ticket `acceptance:` lines; the checks you refuse to let drift become pinned
+   gates; predicates that must stay invisible to implementers become scenarios.
+4. **Deploy.** `codic launch` per role, dispatch, report, gate.
+
+The division of labor is total: those tools own design-time (what to build),
+Codicil owns run-time (who is doing what, what was proven, who must be woken).
+A stale spec is caught the same way as a stale ticket: it is a file, drift is
+a ticket, and the ledger records the ruling.
+
 ### The daily loop (maintainer)
 
 - **Read** `STATE.md`. Two minutes. Census gives queue counts, gate rows with
