@@ -279,6 +279,7 @@ def _find_ticket(f: Codic, tid: str) -> Path:
 
 def cmd_ticket(f: Codic, a) -> int:
     if a.action == "new":
+        f.role_cfg(a.role)  # any role configured in codic.toml; raises with the known list
         slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9-]", "-", a.title.lower())).strip("-")[:48]
         path = f.queue / "ready" / f"{a.id}-{slug}.md"
         if path.exists():
@@ -632,7 +633,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="roster, resources, jobs")
 
     s = sub.add_parser("launch", help="start a named agent per config")
-    s.add_argument("role", choices=ROLES)
+    s.add_argument("role")
     s.add_argument("--name")
     s.add_argument("--mode", choices=("pane", "tab", "window", "workspace"))
     s.add_argument("--dir", help="working directory (default: repo root)")
@@ -669,7 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", choices=("new", "move", "show"))
     s.add_argument("id", nargs="?", default="")
     s.add_argument("state", nargs="?", default="")
-    s.add_argument("--role", choices=ROLES)
+    s.add_argument("--role")
     s.add_argument("--title")
     s.add_argument("--question")
     s.add_argument("--worktree")
