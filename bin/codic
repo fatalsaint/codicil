@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""codic — the codic harness CLI.
+
+Clone this repository to .codic/ in any repo, run .codic/bin/codic init.
+Python 3.11+ stdlib only; no install step.
+"""
+import sys
+from pathlib import Path
+
+if sys.version_info < (3, 11):
+    sys.exit(f"codic requires Python 3.11+ (found {sys.version.split()[0]})")
+
+ROOT = Path(__file__).resolve().parent.parent
+LIB = ROOT / "lib"
+if str(LIB) not in sys.path:
+    sys.path.insert(0, str(LIB))
+
+from codic.cli import main  # noqa: E402
+
+sys.exit(main(sys.argv[1:]))

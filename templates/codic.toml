@@ -1,0 +1,74 @@
+# codic.toml — this codic's bindings (SPEC 9.2). Copy stays at templates/codic.toml;
+# `codic init` writes codic.toml here and it is never tracked by the harness repo.
+
+[codic]
+state_dir = "state"          # relative to this file; the state tree gets its own git history
+scenarios_path = ""          # empty -> state/scenarios; may point OUTSIDE the repo (e.g. "~/ops-scenarios")
+chars_per_token = 4          # token estimate divisor for budget enforcement
+
+[harness]
+backend = "herdr"            # herdr (first-class) | tmux | none
+launch_mode = "pane"         # how `codic launch` places new agents: pane | tab | window
+split_direction = "right"    # pane mode: right | down
+tmux_session = "codic"       # tmux backend: session to attach panes/windows to
+herdr_session = ""           # empty -> the session inherited from the calling pane
+
+[coding_agent]
+default = "omp"              # omp | claude | codex | opencode | ... (see [coding_agents] below)
+
+[llm]
+model = ""                   # global default model; per-role model overrides win
+env = {}                     # extra env for launched agent processes, e.g. provider keys/base URLs
+
+# Launchers. model_flag "" means the model is not passed on the command line
+# (the agent reads its own config). herdr_kind "" means herdr cannot recognize
+# the agent: it is launched as a plain pane command, without lifecycle states.
+[coding_agents.omp]
+launch = "omp"
+model_flag = "--model"
+herdr_kind = "omp"
+
+[coding_agents.claude]
+launch = "claude"
+model_flag = "--model"
+herdr_kind = "claude"
+
+[coding_agents.codex]
+launch = "codex"
+model_flag = "-m"
+herdr_kind = "codex"
+
+[coding_agents.opencode]
+launch = "opencode"
+model_flag = "-m"
+herdr_kind = "opencode"
+
+# One table per agent role: how many slots, which coding agent, which model,
+# extra native args ({model} is substituted), the name prefix for slots,
+# and the role skill budget in tokens. Empty agent/model -> the defaults above.
+[agents.orchestrator]
+count = 1
+prefix = "orchestrator"
+
+[agents.architect]
+count = 1
+prefix = "arch"
+model = ""                   # e.g. a strong reasoning model
+
+[agents.implementer]
+count = 3
+prefix = "impl"
+model = ""                   # e.g. a fast coding model
+
+[agents.reviewer]
+count = 1
+prefix = "rev"
+model = ""                   # reviewers benefit from a different model than the implementer (R1)
+
+[agents.approver]
+count = 1
+prefix = "appr"
+
+[agents.supervisor]
+count = 1
+prefix = "sup"
