@@ -21,7 +21,7 @@ check`); the day-to-day guide is [OPERATIONS.md](OPERATIONS.md).
 
 ```bash
 cd /path/to/any/repo
-git clone https://github.com/your-org/codic .codic
+git clone https://gitea.linuxniche.com/FatalSaint/codicil.git .codic
 .codic/bin/codic init
 ```
 
