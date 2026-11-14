@@ -74,8 +74,9 @@ def parse_frontmatter(text: str, src: str = "<ticket>") -> dict:
             continue
         if rest.startswith("[") and rest.endswith("]"):
             inner = rest[1:-1].strip()
-            items = [_strip_quote(x) for x in inner.split(",")] if inner else []
+            items = [_strip_quote(x.strip()) for x in inner.split(",")] if inner else []
             _set(fm, key, items, src, scalar=False)
+            i += 1
             continue
         _set(fm, key, _strip_quote(rest), src, scalar=True)
         i += 1
@@ -145,8 +146,11 @@ def render(fm: dict, body: str = "") -> str:
             continue
         v = fm[key]
         if isinstance(v, list):
-            out.append(f"{key}:")
-            out += [f"  - {x}" for x in v]
+            if not v:
+                out.append(f"{key}: []")
+            else:
+                out.append(f"{key}:")
+                out += [f"  - {x}" for x in v]
         elif key == "question":
             out.append("question: >")
             out += [f"  {line}" for line in _wrap(str(v), 72)]

@@ -183,6 +183,39 @@ def main() -> int:
         expect_contains(r.stdout, "backend: none", "status renders")
         r = codic(repo, "config")
         expect_contains(r.stdout, '"launch_mode"', "config renders")
+
+        print("[10] frontmatter: inline lists parse; empty lists round-trip (issue #2)")
+        sys.path.insert(0, str(HERE / "lib"))
+        from codic import ticket as T
+        fm = T.parse_frontmatter("---\nid: 1\ntitle: t\nrole: implementer\n"
+                                 "question: q\nblocked-by: [52, 53]\n---\n")
+        if fm.get("blocked-by") != ["52", "53"]:
+            FAILURES.append(f"inline list parsed as {fm.get('blocked-by')!r}")
+        else:
+            print("  ✓ inline list parses")
+        fm = T.parse_frontmatter("---\nid: 1\ntitle: t\nrole: implementer\n"
+                                 "question: q\nblocked-by: []\n---\n")
+        if fm.get("blocked-by") != []:
+            FAILURES.append(f"empty inline list parsed as {fm.get('blocked-by')!r}")
+        else:
+            print("  ✓ empty inline list parses to []")
+        fm = {"id": "1", "title": "t", "role": "implementer", "question": "q",
+              "files": [], "acceptance": ["pytest -q"], "blocked-by": ["52"]}
+        rt = T.parse_frontmatter(T.render(fm))
+        if not (rt["files"] == [] and rt["acceptance"] == ["pytest -q"]
+                and rt["blocked-by"] == ["52"]):
+            FAILURES.append(f"render->parse round trip broken: {rt}")
+        else:
+            print("  ✓ render -> parse round-trips empty and inline lists")
+        mig = st / "queue" / "ready" / "12-migrated.md"
+        mig.write_text("---\nid: 12\ntitle: migrated ticket\nrole: implementer\n"
+                       "question: does an empty list survive I4?\nfiles: []\n"
+                       "blocked-by: []\nacceptance:\n  - true\n---\n")
+        codic(repo, "board")
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "I4 accepts migrated empty-list tickets")
+        mig.unlink()
+        codic(repo, "board")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
