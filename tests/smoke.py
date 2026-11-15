@@ -316,6 +316,75 @@ def main() -> int:
         expect_contains(r.stdout, "already merged", "a landed branch is not merged twice")
         r = codic(repo, "check")
         expect_contains(r.stdout, "0 fail", "fleet green after the merge")
+
+        print("[13] red fixture per invariant: I1, I2, I7, I10, I11, I12")
+        # (I3, I4, I5, I6, I8, I9 fire in sections above; I13-I15 in [12].
+        #  Rule: every invariant gets a state that must make check go red.)
+        state_md = st / "STATE.md"
+        orig_state = state_md.read_text()
+
+        # I1: law over token budget
+        state_md.write_text(orig_state.replace(
+            "\n## Census", "\n" + "filler law padding. " * 1200 + "\n## Census"))
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I1]", "law over budget fails")
+        state_md.write_text(orig_state)
+
+        # I2: law line citing a ledger id that does not exist
+        state_md.write_text(orig_state.replace(
+            "\n## Census",
+            "\n- [L999] phantom ruling unless the repo is archived (maintainer, 2026-11-14)\n"
+            "## Census"))
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I2]", "law citing a dead ledger id fails")
+        state_md.write_text(orig_state)
+
+        # I7: done ticket without a reviewer verdict (I14 rides along)
+        codic(repo, "ticket", "new", "17", "--role", "implementer", "--title", "no verdict",
+              "--question", "Q17?", "--accept", "true")
+        codic(repo, "ticket", "move", "17", "done")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I7]", "done without a verdict fails")
+        expect_contains(r.stdout + r.stderr, "[I14]", "the missing verdict trips I14 too")
+        ev17 = st / "evidence" / "17"
+        ev17.mkdir(parents=True)
+        (ev17 / "verdict.md").write_text(f"accept\n\ncommit: {sha}\nmodel: gpt-5.2\n\nnone.\n")
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "verdict with pinned commit closes the ticket")
+
+        # I11: hand-written dispatch, then dispatch citing a dead ticket
+        (st / "dispatch" / "999-handwritten.md").write_text("do the thing\n")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I11]", "hand-written dispatch fails the marker rule")
+        (st / "dispatch" / "999-handwritten.md").write_text(
+            "<!-- codic:dispatch v1 ticket=999 -->\n\nTicket: 999\n")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "cites ticket 999 which does not exist",
+                        "dispatch citing a dead ticket fails")
+        (st / "dispatch" / "999-handwritten.md").unlink()
+
+        # I12: role skill over its declared budget
+        cfg.write_text(cfg.read_text() + "skill_budget = 5\n")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I12]", "skill over budget fails")
+        cfg.write_text(cfg.read_text().replace("skill_budget = 5", "skill_budget = 1500"))
+
+        # I10: running job waking a name that does not resolve (needs an
+        # interactive backend; the none backend skips the roster check by design)
+        if shutil.which("tmux"):
+            cfg.write_text(cfg.read_text().replace('backend = "none"', 'backend = "tmux"'))
+            (st / "runs").mkdir(exist_ok=True)
+            (st / "runs" / "j1.wake").write_text('{"wake": "ghostslot"}')
+            r = codic(repo, "check", expect=1)
+            expect_contains(r.stdout + r.stderr, "[I10]",
+                            "a job waking an unresolved name fails")
+            (st / "runs" / "j1.wake").unlink()
+            cfg.write_text(cfg.read_text().replace('backend = "tmux"', 'backend = "none"'))
+        else:
+            print("  - tmux absent; I10 red fixture skipped (roster check is backend-gated)")
+
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "every fixture repaired; fleet green")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
