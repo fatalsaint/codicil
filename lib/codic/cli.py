@@ -430,10 +430,87 @@ def cmd_dispatch(f: Codic, a) -> int:
     if a.send:
         H.get(f).prompt(a.send, text, wait=False, timeout_ms=0)
         print(f"[dispatched to {a.send}]")
+        r = S.roster_load(f).get(a.send)
+        if r and r.get("role") == t["role"] and r.get("model"):
+            fm, body = T.split(p)
+            fm["model"] = r["model"]
+            S.atomic_write(p, T.render(fm, body))
+            print(f"[stamped model {r['model']} from roster slot {a.send} (I15)]")
         if not a.no_watch:
             wid = _arm_watchdog(f, a.send, f"dispatch ticket {a.id}", 0, "")
             print(f"[watchdog {wid} armed: silent worker wakes the orchestrator "
                   f"in {int(f.cfg['watchdog']['after_secs'])}s; cancel when the report lands]")
+    return 0
+
+
+# ---------------------------------------------------------------- merge ----
+def _merge_queue(f: Codic) -> list[dict]:
+    tickets, _ = T.all_tickets(f.queue)
+    q = [t for t in tickets if t.get("_state") == "reviewed" and str(t.get("worktree") or "")]
+    return sorted(q, key=lambda t: int(t["id"]))
+
+
+def cmd_merge(f: Codic, a) -> int:
+    """Serialized landing of reviewed worktrees (SPEC 6.7). Does not move tickets."""
+    lock = f.state / "merge.lock"
+
+    def git(args, cwd=None, check=True):
+        r = subprocess.run(["git", "-C", str(cwd or f.repo), *args],
+                           capture_output=True, text=True)
+        if check and r.returncode != 0:
+            sys.exit(f"git {' '.join(args)}: {(r.stderr or r.stdout).strip()[:300]}")
+        return r
+
+    if a.action == "status":
+        print(f"lock: HELD {lock.read_text().strip()}" if lock.exists() else "lock: free")
+        q = _merge_queue(f)
+        if not q:
+            print("queue: empty")
+        for t in q:
+            print(f"queue: {t['id']} {t['title'][:60]} ({t['worktree']})")
+        return 0
+    q = _merge_queue(f)
+    if not q:
+        print("merge queue empty (tickets in reviewed with worktree: enter it)")
+        return 0
+    if lock.exists():
+        holder = lock.read_text().strip()
+        pid = int(holder.split()[0]) if holder.split() and holder.split()[0].isdigit() else 0
+        alive = False
+        if pid:
+            try:
+                os.kill(pid, 0)
+                alive = True
+            except OSError:
+                alive = False
+        if alive and not a.force:
+            sys.exit(f"merge lock held (pid {holder}); wait for it or use --force")
+        print(f"[replacing {'stale' if not alive else 'forced'} merge lock: {holder}]")
+    t = q[0]
+    wt = Path(str(t["worktree"]))
+    if not wt.is_absolute():
+        wt = f.repo / wt
+    if not wt.is_dir():
+        sys.exit(f"ticket {t['id']}: worktree {wt} does not exist")
+    branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=wt).stdout.strip()
+    if branch == git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip():
+        sys.exit(f"ticket {t['id']}: worktree is on the current branch {branch}; nothing to merge")
+    if git(["merge-base", "--is-ancestor", branch, "HEAD"], check=False).returncode == 0:
+        print(f"ticket {t['id']}: branch {branch} is already merged; "
+              "only the approver moves tickets to done (R1)")
+        return 0
+    S.atomic_write(lock, f"{os.getpid()} ticket {t['id']} {S.now_utc()}\n")
+    try:
+        m = git(["merge", "--no-ff", "-m", f"ticket {t['id']}: {t['title']}", branch], check=False)
+        if m.returncode != 0:
+            git(["merge", "--abort"], check=False)
+            sys.exit(f"ticket {t['id']}: merge of {branch} conflicts; resolve in {wt}, "
+                     f"then run `codic merge next` again\n{m.stdout.strip()[:300]}")
+        sha = git(["rev-parse", "--short", "HEAD"]).stdout.strip()
+        S.ledger_append(f, "orchestrator", f"merge ticket {t['id']} branch {branch} at {sha}")
+        print(f"merged ticket {t['id']}: {branch} -> {sha}; ledger line appended")
+    finally:
+        lock.unlink(missing_ok=True)
     return 0
 
 
@@ -712,6 +789,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--as", dest="as_agent", required=True, metavar="AGENT", help="your slot name")
     s.add_argument("--wake", default="", help="who to wake (default: [watchdog] wake or the orchestrator)")
 
+    s = sub.add_parser("merge", help="serialized landing of reviewed worktrees (SPEC 6.7)")
+    s.add_argument("action", choices=("next", "status"))
+    s.add_argument("--force", action="store_true", help="take over a held merge lock")
+
     s = sub.add_parser("run", help="detached job with wake registration (6.5)")
     s.add_argument("--wake", required=True)
     s.add_argument("--label")
@@ -761,6 +842,7 @@ def main(argv: list[str]) -> int:
         "prompt": cmd_prompt, "read": cmd_read, "ledger": cmd_ledger, "law": cmd_law,
         "ticket": cmd_ticket, "gate": cmd_gate_dispatch, "scenario": cmd_scenario,
         "dispatch": cmd_dispatch, "run": cmd_run, "watch": cmd_watch, "report": cmd_report,
+        "merge": cmd_merge,
         "_watchfire": cmd_watchfire, "_wakeup": cmd_wakeup, "config": cmd_config,
     }
     return handlers[args.cmd](f, args)

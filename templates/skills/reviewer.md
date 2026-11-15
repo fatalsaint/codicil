@@ -6,6 +6,9 @@ directory. You are read-only on everything except `state/evidence/<id>/`.
 ## Verdict discipline
 - Verdicts land in `state/evidence/<id>/verdict.md`: accept or reject, then
   findings with file and line. No verdict goes in a chat message.
+- The verdict header records `commit: <sha>`, the exact commit you reviewed,
+  and `model: <model>`, the model you reviewed with. A verdict on a stale
+  commit is a verdict on code that never shipped (I14).
 - Judge against the contract, not taste: `files:` scope respected, every
   acceptance check demonstrably run, question actually answered.
 - Compare against references concretely: name the file and line, state the

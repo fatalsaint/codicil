@@ -237,6 +237,85 @@ def main() -> int:
         r = codic(repo, "check", expect=1)
         expect_contains(r.stdout + r.stderr, "unknown key(s) skill_budgt",
                         "typo'd role key is named, not silently defaulted")
+
+        print("[12] write scopes, pinned commits, cross-family review, merge queue")
+        cfg.write_text(cfg.read_text().replace("\n[agents.gossip]\nskill_budgt = 999\n", "")
+                       .replace("cross_family = false", "cross_family = true"))
+
+        def git(*args):
+            return subprocess.run(["git", "-c", "user.name=smoke", "-c", "user.email=smoke@local",
+                                   "-C", str(repo), *args],
+                                  capture_output=True, text=True, check=True)
+
+        git("init", "-q")
+        git("commit", "-q", "--allow-empty", "-m", "seed")
+        sha = git("rev-parse", "HEAD").stdout.strip()
+
+        # I13: two in-flight tickets sharing a write scope
+        codic(repo, "ticket", "new", "14", "--role", "implementer", "--title", "touch core",
+              "--question", "Q14?", "--file", "src/core.py", "--accept", "true")
+        codic(repo, "ticket", "new", "15", "--role", "implementer", "--title", "also core",
+              "--question", "Q15?", "--file", "src/core.py", "--accept", "true")
+        codic(repo, "ticket", "move", "14", "doing")
+        codic(repo, "ticket", "move", "15", "doing")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I13]", "overlapping write scopes fail")
+        codic(repo, "ticket", "move", "15", "ready")
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "disjoint write scopes pass")
+
+        # I14: done verdict must pin the exact commit reviewed
+        codic(repo, "ticket", "move", "14", "done")
+        ev14 = st / "evidence" / "14"
+        ev14.mkdir(parents=True)
+        (ev14 / "verdict.md").write_text("accept\n\nfindings: none.\n")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I14]", "verdict without a commit pin fails")
+        (ev14 / "verdict.md").write_text("accept\n\ncommit: deadbeef1234567\n\nfindings: none.\n")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I14]", "verdict citing a nonexistent commit fails")
+
+        # I15: cross-family review, opt-in
+        t14 = next((st / "queue" / "done").glob("14-*.md"))
+        t14.write_text(t14.read_text().replace("role: implementer",
+                                               "role: implementer\nmodel: claude-opus-4-1"))
+        (ev14 / "verdict.md").write_text(f"accept\n\ncommit: {sha}\nmodel: claude-sonnet-4-5\n\n"
+                                         "findings: none.\n")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "[I15]", "same-family verdict fails when cross_family is on")
+        (ev14 / "verdict.md").write_text(f"accept\n\ncommit: {sha}\nmodel: gpt-5.2\n\nfindings: none.\n")
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "real commit + cross-family verdict passes")
+
+        # merge queue: reviewed worktree lands under lock, ledger line written
+        git("worktree", "add", "-q", "-b", "ticket-16", "work/wt/16")
+        subprocess.run(["git", "-c", "user.name=smoke", "-c", "user.email=smoke@local",
+                        "-C", str(repo / "work" / "wt" / "16"),
+                        "commit", "-q", "--allow-empty", "-m", "ticket 16 work"], check=True)
+        codic(repo, "ticket", "new", "16", "--role", "implementer", "--title", "land me",
+              "--question", "Q16?", "--accept", "true")
+        t16 = next((st / "queue" / "ready").glob("16-*.md"))
+        t16.write_text(t16.read_text().replace("role: implementer",
+                                               "role: implementer\nworktree: work/wt/16"))
+        codic(repo, "ticket", "move", "16", "reviewed")
+        r = codic(repo, "merge", "status")
+        expect_contains(r.stdout, "queue: 16", "merge status lists the reviewed worktree")
+        (st / "merge.lock").write_text(f"{os.getpid()} ticket 99 fake\n")
+        r = codic(repo, "merge", "next", expect=1)
+        expect_contains(r.stdout + r.stderr, "merge lock held", "a live lock blocks landing")
+        (st / "merge.lock").unlink()
+        r = codic(repo, "merge", "next")
+        expect_contains(r.stdout, "merged ticket 16", "merge next lands the queue head")
+        expect_contains((st / "NOTES.md").read_text(), "merge ticket 16 branch ticket-16",
+                        "the merge writes its ledger line")
+        expect_contains(" ".join(p.name for p in (st / "queue" / "reviewed").glob("16-*.md")),
+                        "16-", "merging did not move the ticket (approver's job)")
+        expect_contains(" ".join(p.name for p in (st / "queue" / "done").glob("16-*.md")) or "none",
+                        "none", "the ticket did not reach done on its own")
+        r = codic(repo, "merge", "next")
+        expect_contains(r.stdout, "already merged", "a landed branch is not merged twice")
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "fleet green after the merge")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

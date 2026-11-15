@@ -66,6 +66,7 @@ DEFAULTS: dict = {
     # One table per agent role: count of concurrent slots, which coding agent,
     # which model, extra native args ({model} placeholder is substituted),
     # name prefix for slots, and the role skill budget in tokens.
+    "review": {"cross_family": False},
     "agents": {
         "orchestrator": {"count": 1, "agent": "", "model": "", "args": [], "prefix": "orchestrator", "skill_budget": 1500},
         "architect":    {"count": 1, "agent": "", "model": "", "args": [], "prefix": "arch",         "skill_budget": 1500},

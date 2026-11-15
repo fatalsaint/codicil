@@ -45,6 +45,9 @@ rule into `AGENTS.md`/`CLAUDE.md`. Then, by hand:
 5. **Scenarios.** Seed the two or three predicates that actually gate
    releases, in `state/scenarios/` or a path outside the repo.
 6. **CI.** `codic check` runs on every push. Red check, no merges.
+7. **Land through the queue.** `codic merge next` merges the oldest `reviewed`
+   worktree under the merge lock and writes the ledger line; `codic merge
+   status` shows the queue. Merges never move tickets (6.7).
 
 ### Where contracts come from (recommended pattern)
 
