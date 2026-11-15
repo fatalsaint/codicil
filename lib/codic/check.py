@@ -220,7 +220,7 @@ def run_check(f, backend) -> int:
                 fail("I12", f"skills/{role}.md is {n} tokens, budget {rc['skill_budget']}")
     for ll in law_lines:
         if not ll.get("ok_shape"):
-            fail("I12", f"law line is not '<- [Lxxx] text (owner, YYYY-MM-DD)': {ll['raw'][:80]}")
+            fail("I12", f"law line is not '- [Lxxx] text (owner, YYYY-MM-DD)': {ll['raw'][:80]}")
         elif not S.has_counterexample(ll["text"]):
             fail("I12", f"law line {ll['cite']} carries no counterexample clause: {ll['raw'][:80]}")
 
