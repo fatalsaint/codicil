@@ -245,6 +245,7 @@ title: restore block-parity per-token path
 role: implementer            # who may work it
 worktree: work/wt/61-parity
 engine: cloud                # local | cloud, for budget accounting
+model: claude-opus-4-1       # stamped by dispatch --send from the roster; feeds I15
 files:                       # write scope; exceeding it is a review rejection
   - src/gpu/block.rs
 question: >                  # one line, appears verbatim on the board
@@ -431,6 +432,25 @@ the dispatches feeding it were re-pasted briefs.
   (I11). A template that embeds a ticket body or a scenario predicate fails the
   check.
 
+### 6.7 Merge queue
+
+Parallel implementers land on one main. Two merges racing is how the second
+inherits the first's breakage, so landing is serialized.
+
+- The queue is tickets in `reviewed` that declare `worktree:`, ordered by
+  ticket id.
+- `codic merge next` takes the head: it takes `state/merge.lock` (holder pid
+  and ticket inside; a lock whose pid is dead is stale and is replaced with a
+  warning), resolves the worktree's branch, merges it into the current branch
+  with `--no-ff`, and appends a ledger line naming ticket, branch, and result
+  commit.
+- On conflict the merge is aborted, the lock released, and the command exits
+  with a diagnostic: resolution happens in the worktree, then `next` runs
+  again.
+- Merging does not move the ticket. Only the approver moves tickets to `done`
+  (R1).
+- `codic merge status` shows the queue and the lock.
+
 ## 7. Invariants
 
 Machine-checkable. `codic check` (8) enforces all of them.
@@ -456,11 +476,21 @@ Machine-checkable. `codic check` (8) enforces all of them.
       and contain no scenario predicates.
 - I12 Every role has a declared skill set within budget, and every law line
       carries a citation, an owner tag, and a counterexample clause.
+- I13 Two in-flight tickets (`doing` or `review`) must not have intersecting
+      `files:` write scopes, directory prefixes included. Overlapping scopes
+      are a collision at merge time; fail at dispatch time instead.
+- I14 Every `done` ticket's verdict records the exact commit it reviewed
+      (`commit: <sha>`), and that commit exists in the repository. A verdict
+      on a stale commit is a verdict on code that never shipped.
+- I15 When `[review] cross_family` is enabled, the verdict's `model:` family
+      must differ from the ticket's dispatched `model:` family. Fleets with
+      access to one model family opt out and keep same-family review from a
+      fresh session; the verdict still names its model.
 
 ## 8. `codic check`
 
 One command, run by CI and by `codic board` before publishing L0.
-It enforces I1 through I12 and exits nonzero on any violation. This is the
+It enforces I1 through I15 and exits nonzero on any violation. This is the
 Atelier lesson generalized: the seam between "what the generator assumes" and
 "what the files actually look like" is where fleets die, so make the seam a
 command. A schema mismatch that surfaces after a 25-minute exclusive-resource

@@ -10,9 +10,9 @@ import re
 from pathlib import Path
 
 REQUIRED = ("id", "title", "role", "question")
-OPTIONAL = ("worktree", "engine", "resource", "files", "acceptance", "blocked-by", "scenarios")
+OPTIONAL = ("worktree", "engine", "model", "resource", "files", "acceptance", "blocked-by", "scenarios")
 LIST_KEYS = ("files", "acceptance", "blocked-by", "scenarios")
-SCALAR_KEYS = ("id", "title", "role", "question", "worktree", "engine", "resource")
+SCALAR_KEYS = ("id", "title", "role", "question", "worktree", "engine", "model", "resource")
 NAME_RE = re.compile(r"^\d+-[a-z0-9][a-z0-9-]*\.md$")
 
 
@@ -110,6 +110,15 @@ def load(path: Path) -> dict:
     fm = parse_frontmatter(path.read_text(), str(path))
     fm["_path"] = str(path)
     return fm
+
+
+def split(path: Path) -> tuple[dict, str]:
+    """(frontmatter, body) so a caller can rewrite fields without losing the contract."""
+    text = path.read_text()
+    fm = parse_frontmatter(text, str(path))
+    lines = text.splitlines(keepends=True)
+    end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    return fm, "".join(lines[end + 1:])
 
 
 def ticket_id_from_name(path: Path) -> str:

@@ -156,6 +156,7 @@ codic ticket new 7 --role implementer --title "add retry to client" \
 codic ticket move 7 doing         # admit work
 codic dispatch 7 --delta "first dispatch" --send impl1   # arms a 30-min silence watchdog
 codic report 7 done --as impl1 "all green; evidence state/evidence/7/run.md"   # the worker runs this: wakes you, disarms the watch
+codic merge next                  # land the oldest reviewed worktree under the merge lock (6.7)
 codic prompt orchestrator "why is ticket 7 still in doing?" --wait
 codic watch arm impl1 --why "ticket 7"   # arm manually for any other waiting turn
 codic watch cancel wd1763000000          # only for agents that report some other way

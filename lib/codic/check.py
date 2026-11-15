@@ -1,8 +1,9 @@
-"""codic.check — enforce SPEC section 7 invariants I1..I12. Exit nonzero on any."""
+"""codic.check — enforce SPEC section 7 invariants I1..I15. Exit nonzero on any."""
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 from . import board as B
@@ -222,6 +223,79 @@ def run_check(f, backend) -> int:
             fail("I12", f"law line is not '<- [Lxxx] text (owner, YYYY-MM-DD)': {ll['raw'][:80]}")
         elif not S.has_counterexample(ll["text"]):
             fail("I12", f"law line {ll['cite']} carries no counterexample clause: {ll['raw'][:80]}")
+
+    # I13 in-flight write scopes must not intersect
+    def _norm_path(p):
+        p = str(p).strip()
+        while p.startswith("./"):
+            p = p[2:]
+        return p.rstrip("/")
+
+    def _scope_hit(a, b):
+        return a == b or a.startswith(b + "/") or b.startswith(a + "/")
+
+    inflight = [t for t in tickets if t.get("_state") in ("doing", "review")]
+    for i in range(len(inflight)):
+        for j in range(i + 1, len(inflight)):
+            fa = [_norm_path(x) for x in inflight[i].get("files") or []]
+            fb = [_norm_path(x) for x in inflight[j].get("files") or []]
+            hit = next(((a, b) for a in fa for b in fb if _scope_hit(a, b)), None)
+            if hit:
+                fail("I13", f"tickets {inflight[i]['id']} and {inflight[j]['id']} have intersecting "
+                            f"write scopes ({hit[0]!r} vs {hit[1]!r}); one writer per path (6.7)")
+
+    # I14 done verdicts pin the exact commit reviewed
+    commit_re = re.compile(r"^commit:\s*([0-9a-f]{7,40})\s*$", re.M)
+    is_git = (f.repo / ".git").exists()
+    for t in tickets:
+        if t.get("_state") != "done":
+            continue
+        ev = f.evidence_dir / t["id"]
+        shas = []
+        if ev.exists():
+            for vp in sorted(ev.glob("verdict*.md")):
+                shas += commit_re.findall(vp.read_text(errors="replace"))
+        if not shas:
+            fail("I14", f"done ticket {t['id']} verdict records no 'commit: <sha>' — "
+                        "a verdict must name the exact commit it reviewed (I14)")
+        elif is_git:
+            for sha in shas:
+                r = subprocess.run(["git", "-C", str(f.repo), "cat-file", "-e", f"{sha}^{{commit}}"],
+                                   capture_output=True)
+                if r.returncode != 0:
+                    fail("I14", f"done ticket {t['id']} verdict cites commit {sha} "
+                                "which does not exist in the repository")
+
+    # I15 cross-family review, opt-in via [review] cross_family
+    if f.cfg["review"]["cross_family"]:
+        model_re = re.compile(r"^model:\s*(\S+)\s*$", re.M)
+
+        def _family(m):
+            m2 = re.match(r"[a-z]+", m.lower())
+            return m2.group(0) if m2 else m.lower()
+
+        for t in tickets:
+            if t.get("_state") not in ("review", "reviewed", "done"):
+                continue
+            ev = f.evidence_dir / t["id"]
+            vmodels = []
+            verdicts = sorted(ev.glob("verdict*.md")) if ev.exists() else []
+            for vp in verdicts:
+                vmodels += model_re.findall(vp.read_text(errors="replace"))
+            if verdicts and not vmodels:
+                warn("I15", f"ticket {t['id']} verdict names no 'model: <model>'; "
+                            "cross_family review needs the reviewer model on record")
+                continue
+            tm = str(t.get("model") or "")
+            if vmodels and not tm:
+                warn("I15", f"ticket {t['id']} has no dispatched model stamped; "
+                            "dispatch --send stamps it from the roster")
+                continue
+            for vm in vmodels:
+                if _family(vm) == _family(tm):
+                    fail("I15", f"ticket {t['id']}: reviewer model {vm!r} shares the family of "
+                                f"implementer model {tm!r}; cross_family review requires another "
+                                "family, or set [review] cross_family = false")
 
     for w in warns:
         print(f"WARN {w}")

@@ -5,6 +5,8 @@ the evidence. You are the only role that moves a ticket to done (4.1).
 
 ## Gate to done
 - A reviewer verdict exists and says accept.
+- The verdict names the commit it reviewed and that commit exists:
+  `git cat-file -e <sha>^{commit}` (I14).
 - Every acceptance check in the ticket has evidence, and any quoted gate pass
   came from a pinned gate (`codic gate check`).
 - If the ticket declares `resource: <name>`, `state/evidence/<id>/window/`
