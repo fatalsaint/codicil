@@ -385,6 +385,87 @@ def main() -> int:
 
         r = codic(repo, "check")
         expect_contains(r.stdout, "0 fail", "every fixture repaired; fleet green")
+
+        print("[14] issue regressions: #8 #9 #10 #11")
+        libdir = str(repo / ".codic" / "lib")
+
+        # #8: verdict citing a commit real only in the codic install tree
+        harness_sha = subprocess.run(["git", "-C", str(repo / ".codic"), "rev-parse", "HEAD"],
+                                     capture_output=True, text=True).stdout.strip()
+        codic(repo, "ticket", "new", "18", "--role", "implementer", "--title", "harness work",
+              "--question", "Q18?", "--accept", "true")
+        codic(repo, "ticket", "move", "18", "done")
+        ev18 = st / "evidence" / "18"
+        ev18.mkdir(parents=True)
+        (ev18 / "verdict.md").write_text(f"accept\n\ncommit: {harness_sha}\nmodel: gpt-5.2\n\nnone.\n")
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "install-tree commit resolves (issue #8)")
+        (ev18 / "verdict.md").write_text("accept\n\ncommit: aabbccddeeff00\nmodel: gpt-5.2\n\nnone.\n")
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "exists in neither", "fabricated sha still fails")
+        (ev18 / "verdict.md").write_text(f"accept\n\ncommit: {harness_sha}\nmodel: gpt-5.2\n\nnone.\n")
+
+        # #9: run_board(write=False) renders and measures without touching files
+        before = (st / "STATE.md").read_text()
+        r = subprocess.run([sys.executable, "-c",
+            "import sys; sys.path.insert(0, sys.argv[1])\n"
+            "from pathlib import Path\n"
+            "from codic.config import Codic\n"
+            "from codic import board as B\n"
+            "f = Codic(Path(sys.argv[2]) / '.codic')\n"
+            "B.run_board(f, None, quiet=True, write=False)\n"
+            "print('rendered')",
+            libdir, str(repo)], capture_output=True, text=True)
+        expect_contains(r.stdout, "rendered", "pure render mode runs (issue #9)")
+        expect_contains((st / "STATE.md").read_text(), before, "pure render left STATE.md untouched")
+
+        # #10: done collapses to a count line; only the active set can overflow
+        verbose = ("---\nid: {i}\ntitle: old work {i} with a long descriptive title "
+                   "that used to burn board tokens\nrole: implementer\nquestion: >\n"
+                   "  Does this verbose historical work item with a long question about "
+                   "parity and throughput actually close when verified end to end?\n---\n\nbody\n")
+        for i in range(501, 601):
+            (st / "queue" / "done" / f"{i}-old.md").write_text(verbose.format(i=i))
+        r = codic(repo, "board")
+        expect_contains(r.stdout, "BOARD.md", "board regenerates with 100 done tickets (issue #10)")
+        board_text = (st / "queue" / "BOARD.md").read_text()
+        expect_contains(board_text, "closed: done: 103", "done collapses to a count line")
+        if "| 501 |" in board_text:
+            FAILURES.append("done rows still rendered on the board (issue #10)")
+            print("  ✗ done rows omitted")
+        else:
+            print("  ✓ done rows omitted")
+        for i in range(701, 1101):
+            (st / "queue" / "ready" / f"{i}-noise.md").write_text(verbose.format(i=i))
+        r = codic(repo, "board", expect=1)
+        expect_contains(r.stdout + r.stderr, "active set itself",
+                        "overflow remedy names the active set, not done archiving")
+        for i in range(701, 1101):
+            (st / "queue" / "ready" / f"{i}-noise.md").unlink()
+        for i in range(501, 601):
+            (st / "queue" / "done" / f"{i}-old.md").unlink()
+        codic(repo, "board")
+
+        # #11: render keeps injected keys; the parser rejects off-schema loudly
+        r = subprocess.run([sys.executable, "-c",
+            "import sys; sys.path.insert(0, sys.argv[1])\n"
+            "from codic import ticket as T\n"
+            "out = T.render({'id':'1','title':'t','role':'implementer','question':'q',"
+            "'branch':'ticket-1'})\n"
+            "assert 'branch: ticket-1' in out, 'key dropped: ' + out\n"
+            "try:\n"
+            "    T.parse_frontmatter(out)\n"
+            "except T.TicketError as e:\n"
+            "    assert 'unknown frontmatter key' in str(e), e\n"
+            "    print('loud')\n"
+            "else:\n"
+            "    raise SystemExit('silent acceptance of unknown key')",
+            libdir], capture_output=True, text=True)
+        expect_contains(r.stdout, "loud",
+                        "render round-trips; parser rejects off-schema loudly (issue #11)")
+
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "fleet green after all issue regressions")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

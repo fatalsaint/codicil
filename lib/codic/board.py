@@ -15,13 +15,18 @@ from .config import BUDGET_BOARD, BUDGET_CENSUS, STATE_DIRS
 
 STATE_ORDER = ("doing", "gpu", "review", "reviewed", "ready", "blocked", "done")
 
+# The board budgets the ACTIVE fleet (issue #10): done tickets collapse to a
+# count line so cumulative history can never starve the working set. Tests
+# that need a different rendered set pass render_states; do not mutate this.
+RENDER_STATES = ("doing", "gpu", "review", "reviewed", "ready", "blocked")
+
 
 def _age_days(path: Path) -> int:
     mtime = path.stat().st_mtime
     return max(0, int((datetime.now(timezone.utc).timestamp() - mtime) // 86400))
 
 
-def build_board(f, tickets: list[dict]) -> str:
+def build_board(f, tickets: list[dict], render_states: tuple = RENDER_STATES) -> str:
     lines = [f"# BOARD — {f.repo.name} fleet",
              f"generated {S.now_utc()} by `codic board`; do not edit", ""]
     by_state: dict[str, list[dict]] = {d: [] for d in STATE_ORDER}
@@ -29,7 +34,7 @@ def build_board(f, tickets: list[dict]) -> str:
         by_state.setdefault(t["_state"], []).append(t)
     for st in list(STATE_ORDER) + [s for s in by_state if s not in STATE_ORDER]:
         rows = by_state.get(st) or []
-        if not rows:
+        if not rows or st not in render_states:
             continue
         lines.append(f"## {st} ({len(rows)})")
         lines.append("")
@@ -38,6 +43,14 @@ def build_board(f, tickets: list[dict]) -> str:
         for t in sorted(rows, key=lambda x: int(x["id"])):
             q = str(t["question"]).replace("|", "\\|")
             lines.append(f"| {t['id']} | {t['role']} | {t.get('worktree', '')} | {q} | {_age_days(Path(t['_path']))}d |")
+        lines.append("")
+    hidden = [(st, rows) for st, rows in by_state.items() if rows and st not in render_states]
+    if hidden:
+        summary = ", ".join(f"{st}: {len(rows)}" for st, rows in sorted(hidden))
+        lines.append(f"## closed: {summary}")
+        lines.append("")
+        lines.append("rows omitted by design: the board budgets the active fleet; "
+                     "counts live in the STATE.md Census.")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -169,12 +182,17 @@ def _wake_registrations(f) -> dict:
     return out
 
 
-def run_board(f, backend=None, quiet: bool = False) -> list[str]:
+def run_board(f, backend=None, quiet: bool = False, write: bool = True) -> list[str]:
     """Regenerate both artifacts. Returns budget report lines; raises SystemExit
-    on parse failures, unknown directories, or budget violations."""
-    ok, why = S.chain_verify(f, f.ledger_path)
-    if not ok:
-        raise SystemExit(f"codic board: refusing to regenerate, ledger chain broken: {why}")
+    on parse failures, unknown directories, or budget violations.
+
+    write=False renders and budget-checks without touching a single file
+    (issue #9): no BOARD.md, no Census in STATE.md, no ledger checkpoint.
+    Library callers and tests measure with that; the CLI writes."""
+    if write:
+        ok, why = S.chain_verify(f, f.ledger_path)
+        if not ok:
+            raise SystemExit(f"codic board: refusing to regenerate, ledger chain broken: {why}")
     tickets, errors = T.all_tickets(f.queue)
     if errors:
         raise SystemExit("codic board: unparseable tickets:\n  " +
@@ -188,15 +206,19 @@ def run_board(f, backend=None, quiet: bool = False) -> list[str]:
     n_board = f.tokens(board)
     if n_board > BUDGET_BOARD:
         raise SystemExit(f"codic board: BOARD.md is {n_board} tokens, budget {BUDGET_BOARD}. "
-                         "Archive done tickets or split the fleet.")
-    S.atomic_write(f.board_path, board)
+                         "The board renders the active fleet only, so the active set itself "
+                         "is over budget: finish, park, or split active tickets "
+                         "(done tickets no longer render rows).")
+    if write:
+        S.atomic_write(f.board_path, board)
     census = build_census(f, tickets, S.roster_load(f), backend)
     n_census = f.tokens(census)
     if n_census > BUDGET_CENSUS:
         raise SystemExit(f"codic board: Census is {n_census} tokens, budget {BUDGET_CENSUS}. "
                          "Compress the roster or archive finished work.")
-    S.set_census(f, census)
-    S.chain_checkpoint(f, f.ledger_path)
+    if write:
+        S.set_census(f, census)
+        S.chain_checkpoint(f, f.ledger_path)
     report = [f"BOARD.md {n_board}/{BUDGET_BOARD} tokens",
               f"Census {n_census}/{BUDGET_CENSUS} tokens",
               f"tickets parsed: {len(tickets)}"]

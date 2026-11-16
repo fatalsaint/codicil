@@ -12,7 +12,7 @@ from pathlib import Path
 REQUIRED = ("id", "title", "role", "question")
 OPTIONAL = ("worktree", "engine", "model", "resource", "files", "acceptance", "blocked-by", "scenarios")
 LIST_KEYS = ("files", "acceptance", "blocked-by", "scenarios")
-SCALAR_KEYS = ("id", "title", "role", "question", "worktree", "engine", "model", "resource")
+SCALAR_KEYS = tuple(k for k in REQUIRED + OPTIONAL if k not in LIST_KEYS)
 NAME_RE = re.compile(r"^\d+-[a-z0-9][a-z0-9-]*\.md$")
 
 
@@ -150,7 +150,12 @@ def all_tickets(queue_dir: Path) -> tuple[list[dict], list[tuple[Path, str]]]:
 
 def render(fm: dict, body: str = "") -> str:
     out = ["---"]
-    for key in REQUIRED + OPTIONAL:
+    # Schema keys first in order, then any extra keys a caller injected:
+    # render never silently drops data (issue #11). An off-schema key then
+    # fails the parser loudly on the next load (I4) instead of vanishing
+    # from every rewrite.
+    extras = sorted(k for k in fm if k not in REQUIRED + OPTIONAL and not k.startswith("_"))
+    for key in tuple(REQUIRED) + tuple(OPTIONAL) + tuple(extras):
         if key not in fm:
             continue
         v = fm[key]
