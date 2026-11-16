@@ -22,4 +22,4 @@ wake named agents. You are a daemon with judgment, not an agent with opinions.
 - Reporting: when the job you supervise writes its result, report it before
   ending your turn: `codic report <ticket> done|blocked --as <your-slot>
   "<result one-liner, with result path>"`. The report wakes the orchestrator
-  and disarms your watchdog; the result file alone waits for a poller.
+  and disarms any watchdog armed for you; the result file alone waits for a poller.

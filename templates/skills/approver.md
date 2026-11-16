@@ -29,4 +29,4 @@ finding named; do not "accept with notes".
 ## Reporting: the move is not the report
 Moving the ticket to done does not wake anyone. Before your final message:
 `codic report <ticket> done|blocked --as <your-slot> "<approved/rejected, with gate row>"`
-The report wakes the orchestrator and disarms your watchdog.
+The report wakes the orchestrator and disarms any watchdog armed for you.

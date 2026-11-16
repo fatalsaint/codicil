@@ -239,7 +239,9 @@ lives in; the board is derived from directories and never edited by hand.
 ### 5.3 Tickets (L2)
 
 One file per ticket, in a state directory (`ready/ doing/ review/ reviewed/ gpu/
-blocked/ done/`). Moving the file is the only state transition. Frontmatter is
+blocked/ done/`). Moving the file is the only state transition. Retired tickets
+move to `archive/`, outside `queue/`: never rendered, never enforced, but its
+ids stay spent forever (I4). Frontmatter is
 required and machine-parsed:
 
 ```yaml
@@ -251,6 +253,8 @@ engine: cloud                # local | cloud, for budget accounting
 model: claude-opus-4-1       # stamped by dispatch --send from the roster; feeds I15
 files:                       # write scope; exceeding it is a review rejection
   - src/gpu/block.rs
+deferred_files:              # paths deliberately left to another ticket (I13);
+  - src/gpu/arena.rs (since 2026-11-16: ticket 62 owns it)
 question: >                  # one line, appears verbatim on the board
   Does the per-token parity path match FP32 reference logits after the FP16 arena change?
 acceptance:                  # machine-checkable checks, see 5.6 for what must NOT go here
@@ -463,7 +467,9 @@ Machine-checkable. `codic check` (8) enforces all of them.
 - I3  Ledger is append-only: the tool verifies the file's prefix hash chain
       against the last recorded checkpoint before regenerating anything.
 - I4  Every ticket parses; every ticket sits in a known state directory; every
-      frontmatter field is in schema.
+      frontmatter field is in schema. Ticket ids are permanent addresses: one
+      id may not appear twice across the live states and `archive/`, because
+      `evidence/<id>/` is shared by everything bearing the id.
 - I5  Every frozen gate matches its pin.
 - I6  No script or dispatch template addresses an agent by pane id or pid.
 - I7  Every `done` ticket has a reviewer verdict and, if `resource: gpu`, a
@@ -481,7 +487,12 @@ Machine-checkable. `codic check` (8) enforces all of them.
       carries a citation, an owner tag, and a counterexample clause.
 - I13 Two in-flight tickets (`doing` or `review`) must not have intersecting
       `files:` write scopes, directory prefixes included. Overlapping scopes
-      are a collision at merge time; fail at dispatch time instead.
+      are a collision at merge time; fail at dispatch time instead. A ticket
+      may defer paths it deliberately leaves to another ticket
+      (`deferred_files:`); deferred paths are not in-flight. The deferral is a
+      promise with paperwork: each entry carries `(since <date>: <unblock
+      condition>)`, and a path listed in both `files` and `deferred_files` is
+      a contradiction. Both warn.
 - I14 Every `done` ticket's verdict records the exact commit it reviewed
       (`commit: <sha>`), and that commit exists in the fleet repository or the
       codic install tree (harness tickets commit to the clone). A verdict

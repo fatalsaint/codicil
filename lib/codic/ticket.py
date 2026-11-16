@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 
 REQUIRED = ("id", "title", "role", "question")
-OPTIONAL = ("worktree", "engine", "model", "resource", "files", "acceptance", "blocked-by", "scenarios")
-LIST_KEYS = ("files", "acceptance", "blocked-by", "scenarios")
+OPTIONAL = ("worktree", "engine", "model", "resource", "files", "acceptance", "blocked-by", "scenarios", "deferred_files")
+LIST_KEYS = ("files", "acceptance", "blocked-by", "scenarios", "deferred_files")
 SCALAR_KEYS = tuple(k for k in REQUIRED + OPTIONAL if k not in LIST_KEYS)
 NAME_RE = re.compile(r"^\d+-[a-z0-9][a-z0-9-]*\.md$")
 

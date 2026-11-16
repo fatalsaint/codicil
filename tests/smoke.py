@@ -487,6 +487,100 @@ def main() -> int:
             libdir, str(repo)], capture_output=True, text=True)
         expect_contains(r.stdout, "honored",
                         "render_states honored per call and via global swap (issue #13)")
+
+        print("[16] issue regressions: #15 #16 #17 #18 #19")
+
+        # #15: plain dispatch arms nothing and no longer promises a watchdog
+        r = codic(repo, "dispatch", "7", "--delta", "d2", "--budget", "b")
+        expect_contains(r.stdout, "disarms any watchdog armed for you",
+                        "dispatch footer promises only what report does (issue #15)")
+        r = codic(repo, "watch", "list")
+        armed = [ln for ln in r.stdout.splitlines() if " armed " in ln]
+        if armed:
+            FAILURES.append(f"plain dispatch armed a watch (issue #15): {armed}")
+            print("  ✗ plain dispatch arms nothing")
+        else:
+            print("  ✓ plain dispatch arms nothing, and says so")
+
+        # #16: two arms in the same second both survive
+        r = subprocess.run([sys.executable, "-c",
+            "import sys; sys.path.insert(0, sys.argv[1])\n"
+            "from pathlib import Path\n"
+            "from codic.config import Codic\n"
+            "import codic.harness as H\n"
+            "from codic import cli\n"
+            "f = Codic(Path(sys.argv[2]) / '.codic')\n"
+            "class Stub:\n"
+            "    name = 'stub'; interactive = True\n"
+            "    def resolve(self, n): return True\n"
+            "H.get = lambda f: Stub()\n"
+            "a = cli._arm_watchdog(f, 'impl', 'why', 2, 'orchy')\n"
+            "b = cli._arm_watchdog(f, 'appr', 'why', 2, 'orchy')\n"
+            "assert a != b, f'both arms got {a}: one silently lost'\n"
+            "files = {p.name for p in f.watches_dir.glob('*.watch')}\n"
+            "assert a + '.watch' in files and b + '.watch' in files, files\n"
+            "for p in f.watches_dir.glob('*.watch'): p.unlink()\n"
+            "print('distinct')",
+            libdir, str(repo)], capture_output=True, text=True)
+        expect_contains(r.stdout, "distinct", "same-second arms both survive (issue #16)")
+
+        # #17: archived ids are spent; a manual collision goes check red
+        codic(repo, "ticket", "new", "19", "--role", "implementer", "--title", "retire me",
+              "--question", "Q19?", "--accept", "true")
+        codic(repo, "ticket", "move", "19", "done")
+        (st / "archive").mkdir(exist_ok=True)
+        p19 = next((st / "queue" / "done").glob("19-*.md"))
+        p19.rename(st / "archive" / p19.name)
+        r = codic(repo, "ticket", "new", "19", "--role", "implementer", "--title", "again",
+                  "--question", "Q19 again?", expect=1)
+        expect_contains(r.stdout + r.stderr, "already used", "archived id rejected (issue #17)")
+        (st / "queue" / "ready" / "19-clone.md").write_text((st / "archive" / p19.name).read_text())
+        r = codic(repo, "check", expect=1)
+        expect_contains(r.stdout + r.stderr, "evidence/19/", "live+archive id collision fails I4")
+        (st / "queue" / "ready" / "19-clone.md").unlink()
+
+        # #19: deferred_files parses clean, contradicts loud, demands paperwork
+        codic(repo, "ticket", "new", "21", "--role", "implementer", "--title", "defer work",
+              "--question", "Q21?", "--accept", "true", "--file", "src/a.py",
+              "--defer", "src/b.py (since 2026-11-16: ticket 16 owns it)")
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "annotated deferral parses clean (issue #19)")
+        t21 = next((st / "queue" / "ready").glob("21-*.md"))
+        txt = t21.read_text().replace("  - src/a.py", "  - src/a.py\n  - src/b.py")
+        t21.write_text(txt)
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "both files and deferred_files",
+                        "path in files and deferred_files warns")
+        t21.write_text(txt.replace(" (since 2026-11-16: ticket 16 owns it)", ""))
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "without '(since", "unannotated deferral warns")
+        t21.unlink()
+        codic(repo, "board")
+
+        # #18: the public module surface is a contract; renames break here first
+        r = subprocess.run([sys.executable, "-c",
+            "import sys; sys.path.insert(0, sys.argv[1])\n"
+            "from codic import board, ticket, state, config, check, harness\n"
+            "surface = {\n"
+            "    board: ('RENDER_STATES', 'STATE_ORDER', 'build_board', 'build_census', 'run_board'),\n"
+            "    ticket: ('REQUIRED', 'OPTIONAL', 'LIST_KEYS', 'SCALAR_KEYS', 'render',\n"
+            "             'parse_frontmatter', 'load', 'split', 'all_tickets'),\n"
+            "    state: ('law_lines', 'set_census', 'roster_load', 'chain_verify', 'chain_checkpoint',\n"
+            "            'atomic_write', 'dispatch_render', 'dispatch_check_size', 'now_utc', 'today'),\n"
+            "    config: ('Codic', 'STATE_DIRS', 'BUDGET_LAW', 'BUDGET_CENSUS', 'BUDGET_BOARD',\n"
+            "              'BUDGET_DISPATCH'),\n"
+            "    harness: ('get', 'validate_name'),\n"
+            "    check: ('run_check',),\n"
+            "}\n"
+            "for obj, names in surface.items():\n"
+            "    missing = [n for n in names if not hasattr(obj, n)]\n"
+            "    assert not missing, obj.__name__ + ' lost: ' + ', '.join(missing)\n"
+            "print('public')",
+            libdir], capture_output=True, text=True)
+        expect_contains(r.stdout, "public", "public module surface intact (issue #18)")
+
+        r = codic(repo, "check")
+        expect_contains(r.stdout, "0 fail", "fleet green after all regressions")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

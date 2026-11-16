@@ -25,5 +25,5 @@ asked to shape. You write contracts, not code.
 ## Reporting: contract delivered is contract reported
 Before your final message:
 `codic report <ticket> done|blocked --as <your-slot> "<one line, with contract path>"`
-The report wakes the orchestrator and disarms your watchdog; a contract left
+The report wakes the orchestrator and disarms any watchdog armed for you; a contract left
 on disk unreported holds the ticket out of dispatch until the backstop fires.

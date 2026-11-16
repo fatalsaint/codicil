@@ -281,6 +281,14 @@ def cmd_ticket(f: Codic, a) -> int:
     if a.action == "new":
         f.role_cfg(a.role)  # any role configured in codic.toml; raises with the known list
         slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9-]", "-", a.title.lower())).strip("-")[:48]
+        # ids are permanent addresses (issue #17): evidence/<id>/ is shared by
+        # every ticket bearing the id, so an id that ever existed - live or
+        # archived - is spent
+        for d in [f.queue / s for s in STATE_DIRS] + [f.archive_dir]:
+            clash = sorted(d.glob(f"{a.id}-*.md")) if d.exists() else []
+            if clash:
+                sys.exit(f"ticket id {a.id} is already used by "
+                         f"{clash[0].relative_to(f.state)}; ids are permanent, pick the next free one")
         path = f.queue / "ready" / f"{a.id}-{slug}.md"
         if path.exists():
             sys.exit(f"{path} already exists")
@@ -292,6 +300,7 @@ def cmd_ticket(f: Codic, a) -> int:
         if a.accept: fm["acceptance"] = a.accept
         if a.blocked_by: fm["blocked-by"] = [b.strip() for b in a.blocked_by.split(",")]
         if a.scenario: fm["scenarios"] = a.scenario
+        if a.defer: fm["deferred_files"] = a.defer
         body = a.body or "## Contract\n\n<the complete contract: what to change, how it is\n" \
                          "checked, what must not be touched. A worker never needs chat history.>\n"
         S.atomic_write(path, T.render(fm, body))
@@ -581,9 +590,21 @@ def _arm_watchdog(f: Codic, target: str, why: str, after: int, wake: str) -> str
     if not backend.resolve(target):
         sys.exit(f"{target!r} does not resolve in the harness; nothing to watch")
     after = after or int(f.cfg["watchdog"]["after_secs"])
-    wid = f"wd{int(time.time())}"
     reg = {"target": target, "wake": wake, "why": why or "", "after": after, "set_at": S.now_utc()}
-    S.atomic_write(wd / f"{wid}.watch", json.dumps(reg) + "\n")
+    # ids must never collide (issue #16): two arms in the same second used to
+    # share wd<epoch> and the second silently replaced the first. Claim the
+    # id atomically with O_EXCL and step the counter until the slot is free.
+    base = wid = f"wd{int(time.time())}"
+    n = 1
+    while True:
+        try:
+            fd = os.open(wd / f"{wid}.watch", os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            break
+        except FileExistsError:
+            n += 1
+            wid = f"{base}-{n}"
+    with os.fdopen(fd, "w") as fh:
+        fh.write(json.dumps(reg) + "\n")
     codic = f.root / "bin" / "codic"
     wrapper = (f"sleep {after}; {H._shq(str(codic))} _watchfire {wid} "
                f">>{H._shq(str(wd / (wid + '.log')))} 2>&1")
@@ -757,6 +778,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--accept", action="append")
     s.add_argument("--blocked-by")
     s.add_argument("--scenario", action="append")
+    s.add_argument("--defer", action="append",
+                   help="path this ticket deliberately leaves to another ticket; "
+                        "annotate '(since YYYY-MM-DD: unblock condition)'")
     s.add_argument("--body")
     s.add_argument("--note")
 

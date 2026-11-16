@@ -256,7 +256,7 @@ def dispatch_render(f, t: dict, delta: str, budget: str, agent: str = "") -> str
              "Read (nothing else): " + ", ".join(read),
              f"Report before your final turn: codic report {t['id']} done|blocked "
              f"--as {agent or '<your-slot>'} \"<one line, with evidence path>\" "
-             "(wakes the orchestrator and disarms the watchdog)"]
+             "(wakes the orchestrator and disarms any watchdog armed for you)"]
     return "\n".join(lines) + "\n"
 
 

@@ -244,6 +244,42 @@ def run_check(f, backend) -> int:
                 fail("I13", f"tickets {inflight[i]['id']} and {inflight[j]['id']} have intersecting "
                             f"write scopes ({hit[0]!r} vs {hit[1]!r}); one writer per path (6.7)")
 
+    # I4 ticket ids are permanent addresses (issue #17): live and archive
+    # sharing an id means two tickets sharing one evidence/<id>/ directory.
+    live_ids: dict[str, list] = {}
+    for t in tickets:
+        live_ids.setdefault(str(t["id"]), []).append(Path(t["_path"]).name)
+    arch_ids: dict[str, list] = {}
+    if f.archive_dir.exists():
+        for p in sorted(f.archive_dir.glob("*.md")):
+            m = re.match(r"^(\d+)-", p.name)
+            if m:
+                arch_ids.setdefault(m.group(1), []).append(p.name)
+    for tid in sorted(set(live_ids) & set(arch_ids), key=int):
+        fail("I4", f"ticket id {tid} is live ({live_ids[tid][0]}) and archived — "
+                   f"evidence/{tid}/ would mix two tickets; renumber the live ticket")
+    for tid, names in sorted(arch_ids.items(), key=lambda kv: int(kv[0])):
+        if len(names) > 1:
+            fail("I4", f"archive/ holds {len(names)} tickets sharing id {tid}: {', '.join(names)}")
+
+    # deferred_files (issue #19): a deferral is a promise with paperwork.
+    # Deferred paths are not in-flight, so I13 above never counts them; what
+    # check enforces is that the record stays honest and auditable.
+    defer_re = re.compile(r"^(?P<path>.+?) \(since (?P<date>\d{4}-\d{2}-\d{2}): (?P<why>.+)\)$")
+    for t in tickets:
+        files = [_norm_path(x) for x in t.get("files") or []]
+        for raw in t.get("deferred_files") or []:
+            s = str(raw).strip()
+            m = defer_re.match(s)
+            if not m:
+                warn("I13", f"ticket {t['id']} defers {s[:60]!r} without "
+                            "'(since YYYY-MM-DD: unblock condition)' — an unannotated "
+                            "deferral cannot be aged out or audited (issue #19)")
+            elif _norm_path(m.group("path")) in files:
+                warn("I13", f"ticket {t['id']} lists {_norm_path(m.group('path'))!r} in both "
+                            "files and deferred_files — a path cannot be in-flight and "
+                            "deferred at once (issue #19)")
+
     # I14 done verdicts pin the exact commit reviewed
     commit_re = re.compile(r"^commit:\s*([0-9a-f]{7,40})\s*$", re.M)
     git_roots = [root for root in (f.repo, f.root) if (root / ".git").exists()]

@@ -24,7 +24,7 @@ must be able to re-run your steps from the file alone.
 Your turn does not end until the orchestrator knows. Before your final
 message, run:
 `codic report <ticket> done|blocked --as <your-slot> "<one line, with evidence path>"`
-The report wakes the orchestrator and disarms your watchdog. Evidence on disk
+The report wakes the orchestrator and disarms any watchdog armed for you. Evidence on disk
 without a report is a silent finish, and a silent finish looks dead: the fleet
 waits out the full watchdog interval on every early finisher. A blocked report
 says what, where, and what would unblock you. Do not retry the same failing
