@@ -466,6 +466,27 @@ def main() -> int:
 
         r = codic(repo, "check")
         expect_contains(r.stdout, "0 fail", "fleet green after all issue regressions")
+
+        print("[15] render_states honored and late-bound")
+        r = subprocess.run([sys.executable, "-c",
+            "import sys; sys.path.insert(0, sys.argv[1])\n"
+            "from pathlib import Path\n"
+            "from codic.config import Codic\n"
+            "from codic import board as B, ticket as T\n"
+            "f = Codic(Path(sys.argv[2]) / '.codic')\n"
+            "tickets, _ = T.all_tickets(f.queue)\n"
+            "done_only = B.build_board(f, tickets, render_states=('done',))\n"
+            "assert '## done (3)' in done_only, 'parameter ignored: ' + done_only\n"
+            "assert 'closed: doing: 1, ready: 1, reviewed: 1' in done_only, done_only\n"
+            "orig = B.RENDER_STATES\n"
+            "B.RENDER_STATES = ('done',)\n"
+            "swapped = B.build_board(f, tickets)\n"
+            "B.RENDER_STATES = orig\n"
+            "assert '## done (3)' in swapped, 'global swap ignored'\n"
+            "print('honored')",
+            libdir, str(repo)], capture_output=True, text=True)
+        expect_contains(r.stdout, "honored",
+                        "render_states honored per call and via global swap (issue #13)")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

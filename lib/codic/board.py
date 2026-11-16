@@ -16,8 +16,9 @@ from .config import BUDGET_BOARD, BUDGET_CENSUS, STATE_DIRS
 STATE_ORDER = ("doing", "gpu", "review", "reviewed", "ready", "blocked", "done")
 
 # The board budgets the ACTIVE fleet (issue #10): done tickets collapse to a
-# count line so cumulative history can never starve the working set. Tests
-# that need a different rendered set pass render_states; do not mutate this.
+# count line so cumulative history can never starve the working set. Callers
+# pass render_states per call, or swap this module global; the default is
+# read at call time (issue #13), so both work.
 RENDER_STATES = ("doing", "gpu", "review", "reviewed", "ready", "blocked")
 
 
@@ -26,7 +27,11 @@ def _age_days(path: Path) -> int:
     return max(0, int((datetime.now(timezone.utc).timestamp() - mtime) // 86400))
 
 
-def build_board(f, tickets: list[dict], render_states: tuple = RENDER_STATES) -> str:
+def build_board(f, tickets: list[dict], render_states: tuple | None = None) -> str:
+    if render_states is None:
+        # late binding: a def-time default would freeze the global and
+        # silently ignore callers who swap it (issue #13)
+        render_states = RENDER_STATES
     lines = [f"# BOARD — {f.repo.name} fleet",
              f"generated {S.now_utc()} by `codic board`; do not edit", ""]
     by_state: dict[str, list[dict]] = {d: [] for d in STATE_ORDER}
