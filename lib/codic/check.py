@@ -246,7 +246,19 @@ def run_check(f, backend) -> int:
 
     # I14 done verdicts pin the exact commit reviewed
     commit_re = re.compile(r"^commit:\s*([0-9a-f]{7,40})\s*$", re.M)
-    is_git = (f.repo / ".git").exists()
+    git_roots = [root for root in (f.repo, f.root) if (root / ".git").exists()]
+
+    def _commit_exists(sha):
+        # harness tickets commit to the codic install tree; fleet tickets to
+        # the repo. A sha real in either is real (issue #8); fabricated ones
+        # fail both.
+        for root in git_roots:
+            r = subprocess.run(["git", "-C", str(root), "cat-file", "-e", f"{sha}^{{commit}}"],
+                               capture_output=True)
+            if r.returncode == 0:
+                return True
+        return False
+
     for t in tickets:
         if t.get("_state") != "done":
             continue
@@ -258,13 +270,11 @@ def run_check(f, backend) -> int:
         if not shas:
             fail("I14", f"done ticket {t['id']} verdict records no 'commit: <sha>' — "
                         "a verdict must name the exact commit it reviewed (I14)")
-        elif is_git:
+        elif git_roots:
             for sha in shas:
-                r = subprocess.run(["git", "-C", str(f.repo), "cat-file", "-e", f"{sha}^{{commit}}"],
-                                   capture_output=True)
-                if r.returncode != 0:
+                if not _commit_exists(sha):
                     fail("I14", f"done ticket {t['id']} verdict cites commit {sha} "
-                                "which does not exist in the repository")
+                                "which exists in neither the fleet repo nor the codic install tree")
 
     # I15 cross-family review, opt-in via [review] cross_family
     if f.cfg["review"]["cross_family"]:

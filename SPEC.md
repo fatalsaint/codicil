@@ -229,8 +229,11 @@ it, move it to a skill, or promote it to a gate.
 
 ### 5.2 `BOARD.md` (L1)
 
-Generated table, one row per ticket, grouped by state directory. Columns:
-`ticket | role | worktree | question | age`. State is the directory a ticket file
+Generated table, one row per **active** ticket, grouped by state directory.
+Columns: `ticket | role | worktree | question | age`. Done tickets render as a
+single count line, not rows: the board budget covers the working set, and
+cumulative history must never starve it (a 177-ticket fleet hit 8165/8192
+tokens doing it the old way). State is the directory a ticket file
 lives in; the board is derived from directories and never edited by hand.
 
 ### 5.3 Tickets (L2)
@@ -480,7 +483,8 @@ Machine-checkable. `codic check` (8) enforces all of them.
       `files:` write scopes, directory prefixes included. Overlapping scopes
       are a collision at merge time; fail at dispatch time instead.
 - I14 Every `done` ticket's verdict records the exact commit it reviewed
-      (`commit: <sha>`), and that commit exists in the repository. A verdict
+      (`commit: <sha>`), and that commit exists in the fleet repository or the
+      codic install tree (harness tickets commit to the clone). A verdict
       on a stale commit is a verdict on code that never shipped.
 - I15 When `[review] cross_family` is enabled, the verdict's `model:` family
       must differ from the ticket's dispatched `model:` family. Fleets with
