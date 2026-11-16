@@ -128,6 +128,9 @@ class Codic:
         self.runs_dir = self.state / "runs"
         self.watches_dir = self.state / "watches"
         self.reports_dir = self.state / "reports"
+        # retired tickets rest here (issue #17): outside queue/ so the board
+        # and invariant scans skip it, but its ids stay spent forever
+        self.archive_dir = self.state / "archive"
         self.resources_dir = self.state / "resources"
         self.chain_dir = self.state / ".chain"
         self.templates = self.root / "templates"
