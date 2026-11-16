@@ -27,5 +27,5 @@ directory. You are read-only on everything except `state/evidence/<id>/`.
 ## Reporting: verdict is not a report
 Writing the verdict file does not wake anyone. Before your final message:
 `codic report <ticket> done|blocked --as <your-slot> "<verdict one-liner, with verdict path>"`
-The report wakes the orchestrator and disarms your watchdog; a verdict nobody
+The report wakes the orchestrator and disarms any watchdog armed for you; a verdict nobody
 reads is a ticket stuck in review until the backstop fires.
